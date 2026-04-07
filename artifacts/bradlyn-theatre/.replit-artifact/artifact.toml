@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Bradlyn's Theatre"
+version = "1.0.0"
+id = "artifacts/bradlyn-theatre"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22639
+
+[services.development]
+run = "pnpm --filter @workspace/bradlyn-theatre run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/bradlyn-theatre", "run", "build" ]
+publicDir = "artifacts/bradlyn-theatre/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22639"
+BASE_PATH = "/"
