@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { ToastDisplay } from "@/components/ToastDisplay";
 import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
 
 const Home = lazy(() => import("@/pages/Home"));
 const Search = lazy(() => import("@/pages/Search"));
@@ -25,85 +26,29 @@ function PageLoader() {
   );
 }
 
-function WatchRoute() {
+function WithLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Watch />
-    </Suspense>
-  );
-}
-
-function RoomWatchRoute() {
-  return (
-    <Suspense fallback={<PageLoader />}>
-      <RoomWatch />
-    </Suspense>
+    <>
+      <Navbar />
+      <Suspense fallback={<PageLoader />}>{children}</Suspense>
+      <Footer />
+    </>
   );
 }
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Home /></Suspense>
-        </>
-      )} />
-      <Route path="/search" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Search /></Suspense>
-        </>
-      )} />
-      <Route path="/browse" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Browse /></Suspense>
-        </>
-      )} />
-      <Route path="/detail/:id" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Detail /></Suspense>
-        </>
-      )} />
-      <Route path="/staff/:id" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Staff /></Suspense>
-        </>
-      )} />
-      <Route path="/profile" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Profile /></Suspense>
-        </>
-      )} />
-      <Route path="/profile/list" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Profile /></Suspense>
-        </>
-      )} />
-      <Route path="/profile/settings" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Settings /></Suspense>
-        </>
-      )} />
-      <Route path="/profile/room" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><MyRoom /></Suspense>
-        </>
-      )} />
-      <Route path="/rooms" component={() => (
-        <>
-          <Navbar />
-          <Suspense fallback={<PageLoader />}><Rooms /></Suspense>
-        </>
-      )} />
+      <Route path="/" component={() => <WithLayout><Home /></WithLayout>} />
+      <Route path="/search" component={() => <WithLayout><Search /></WithLayout>} />
+      <Route path="/browse" component={() => <WithLayout><Browse /></WithLayout>} />
+      <Route path="/detail/:id" component={() => <WithLayout><Detail /></WithLayout>} />
+      <Route path="/staff/:id" component={() => <WithLayout><Staff /></WithLayout>} />
+      <Route path="/profile" component={() => <WithLayout><Profile /></WithLayout>} />
+      <Route path="/profile/list" component={() => <WithLayout><Profile /></WithLayout>} />
+      <Route path="/profile/settings" component={() => <WithLayout><Settings /></WithLayout>} />
+      <Route path="/profile/room" component={() => <WithLayout><MyRoom /></WithLayout>} />
+      <Route path="/rooms" component={() => <WithLayout><Rooms /></WithLayout>} />
       <Route path="/rooms/:id" component={() => (
         <Suspense fallback={<PageLoader />}><RoomWatch /></Suspense>
       )} />
@@ -111,10 +56,15 @@ function Router() {
         <Suspense fallback={<PageLoader />}><Watch /></Suspense>
       )} />
       <Route component={() => (
-        <>
-          <Navbar />
-          <div className="pt-20 text-center text-gray-400">Page not found</div>
-        </>
+        <WithLayout>
+          <div className="pt-20 min-h-[60vh] flex items-center justify-center">
+            <div className="text-center">
+              <p className="text-6xl mb-4">🎭</p>
+              <h2 className="text-white text-2xl font-bold mb-2">Page not found</h2>
+              <p className="text-gray-400 text-sm">This page doesn't exist.</p>
+            </div>
+          </div>
+        </WithLayout>
       )} />
     </Switch>
   );

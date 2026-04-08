@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { Search as SearchIcon, X, Clock } from "lucide-react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Card } from "@/components/Card";
 import { type Subject, externalFetch, apiPost, apiGet } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function SearchPage() {
-  const [location] = useLocation();
-  const urlQuery = new URLSearchParams(window.location.search).get("q") ?? "";
-  const [query, setQuery] = useState(urlQuery);
+  const searchStr = useSearch();
+  const urlQuery = new URLSearchParams(searchStr).get("q") ?? "";
+  const [inputValue, setInputValue] = useState(urlQuery);
   const [results, setResults] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -18,6 +18,7 @@ export default function SearchPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user } = useAuth();
   const observerRef = useRef<HTMLDivElement>(null);
+  const currentQuery = useRef(urlQuery);
 
   useEffect(() => {
     if (!user) return;
@@ -28,7 +29,7 @@ export default function SearchPage() {
   }, [user]);
 
   const doSearch = async (kw: string, pg = 1, append = false) => {
-    if (!kw) { setResults([]); return; }
+    if (!kw.trim()) { setResults([]); return; }
     setLoading(true);
     try {
       const data = await externalFetch("search", { keyword: kw, page: pg, perPage: 24, subjectType: 0 }) as { data: { items: Subject[]; pager: { hasMore: boolean } } };
@@ -48,24 +49,39 @@ export default function SearchPage() {
   };
 
   useEffect(() => {
-    if (urlQuery) { setQuery(urlQuery); doSearch(urlQuery); }
+    setInputValue(urlQuery);
+    currentQuery.current = urlQuery;
+    if (urlQuery) doSearch(urlQuery);
+    else setResults([]);
   }, [urlQuery]);
 
   useEffect(() => {
     if (!observerRef.current || !hasMore) return;
     const obs = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMore && !loading) {
-        doSearch(query, page + 1, true);
+        doSearch(currentQuery.current, page + 1, true);
       }
     });
     obs.observe(observerRef.current);
     return () => obs.disconnect();
-  }, [hasMore, loading, page, query]);
+  }, [hasMore, loading, page]);
 
   const handleSearch = (kw: string) => {
-    setQuery(kw);
+    if (!kw.trim()) return;
+    currentQuery.current = kw;
     navigate(`/search?q=${encodeURIComponent(kw)}`);
-    doSearch(kw);
+  };
+
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (val.trim()) {
+      debounceRef.current = setTimeout(() => {
+        handleSearch(val);
+      }, 500);
+    } else {
+      setResults([]);
+    }
   };
 
   return (
@@ -76,26 +92,32 @@ export default function SearchPage() {
           <input
             autoFocus
             type="text"
-            value={query}
-            onChange={e => {
-              setQuery(e.target.value);
-              if (debounceRef.current) clearTimeout(debounceRef.current);
-              debounceRef.current = setTimeout(() => handleSearch(e.target.value), 500);
-            }}
-            onKeyDown={e => { if (e.key === "Enter") handleSearch(query); }}
+            value={inputValue}
+            onChange={e => handleInputChange(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && inputValue.trim()) handleSearch(inputValue); }}
             placeholder="Search movies, series..."
             className="bg-transparent flex-1 text-white placeholder-gray-500 outline-none text-sm"
           />
-          {query && <button onClick={() => { setQuery(""); setResults([]); }}><X size={16} className="text-gray-400" /></button>}
+          {inputValue && (
+            <button onClick={() => { setInputValue(""); setResults([]); navigate("/search"); }}>
+              <X size={16} className="text-gray-400 hover:text-white" />
+            </button>
+          )}
         </div>
       </div>
 
-      {!query && history.length > 0 && (
+      {!urlQuery && history.length > 0 && (
         <div className="max-w-xl mx-auto">
-          <h3 className="text-white font-medium mb-3 flex items-center gap-2"><Clock size={16} className="text-gray-400" /> Recent Searches</h3>
+          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+            <Clock size={16} className="text-gray-400" /> Recent Searches
+          </h3>
           <div className="space-y-1">
             {history.slice(0, 10).map(h => (
-              <button key={h.id} onClick={() => handleSearch(h.keyword)} className="w-full text-left px-4 py-2.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 text-sm flex items-center gap-3">
+              <button
+                key={h.id}
+                onClick={() => { setInputValue(h.keyword); handleSearch(h.keyword); }}
+                className="w-full text-left px-4 py-2.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 text-sm flex items-center gap-3"
+              >
                 <Clock size={14} className="text-gray-500 flex-shrink-0" />
                 {h.keyword}
               </button>
@@ -104,11 +126,15 @@ export default function SearchPage() {
         </div>
       )}
 
-      {query && (
+      {urlQuery && (
         <>
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4">
             <p className="text-gray-400 text-sm">
-              {loading ? "Searching..." : `Results for "${query}" (${results.length})`}
+              {loading && results.length === 0
+                ? "Searching..."
+                : results.length > 0
+                  ? `${results.length} results for "${urlQuery}"`
+                  : !loading ? `No results found for "${urlQuery}"` : ""}
             </p>
           </div>
           {loading && results.length === 0 ? (
@@ -122,8 +148,10 @@ export default function SearchPage() {
               {results.map(s => <Card key={s.subjectId} subject={s} />)}
             </div>
           )}
-          <div ref={observerRef} className="h-8 flex items-center justify-center">
-            {loading && results.length > 0 && <div className="w-6 h-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />}
+          <div ref={observerRef} className="h-10 flex items-center justify-center mt-4">
+            {loading && results.length > 0 && (
+              <div className="w-6 h-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+            )}
           </div>
         </>
       )}

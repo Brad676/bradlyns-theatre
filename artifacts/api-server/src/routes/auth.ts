@@ -30,7 +30,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const passwordHash = await bcrypt.hash(password, 10);
   const [user] = await db.insert(usersTable).values({ username, passwordHash }).returning();
   const token = signToken({ userId: user.id, username: user.username });
-  res.status(201).json({ token, user: { id: user.id, username: user.username } });
+  res.status(201).json({ token, user: { userId: user.id, username: user.username } });
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {
@@ -50,7 +50,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
   const token = signToken({ userId: user.id, username: user.username });
-  res.json({ token, user: { id: user.id, username: user.username } });
+  res.json({ token, user: { userId: user.id, username: user.username } });
 });
 
 router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
