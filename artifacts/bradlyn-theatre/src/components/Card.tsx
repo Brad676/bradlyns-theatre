@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Plus, Check, Play, Star } from "lucide-react";
 import { type Subject } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -18,6 +18,7 @@ export function Card({ subject, rank, onSendToRoom }: Props) {
   const [hover, setHover] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const coverUrl = subject.cover?.url ?? subject.stills?.url ?? "";
   const typeLabel = subject.subjectType === 1 ? "Movie" : subject.subjectType === 2 ? "Series" : "Video";
   const genres = (subject.genre ?? "").split(",").slice(0, 2);
@@ -73,14 +74,12 @@ export function Card({ subject, rank, onSendToRoom }: Props) {
             </div>
           )}
           <div className={`absolute inset-0 bg-black/60 flex flex-col justify-end p-2 transition-opacity duration-200 ${hover ? "opacity-100" : "opacity-0"}`}>
-            <Link href={`/watch/${subject.subjectId}`}>
               <button
                 className="w-full bg-cyan-500/80 hover:bg-cyan-500 text-black font-bold py-1.5 rounded text-xs flex items-center justify-center gap-1 mb-1"
-                onClick={e => e.stopPropagation()}
+                onClick={e => { e.preventDefault(); e.stopPropagation(); navigate(`/watch/${subject.subjectId}`); }}
               >
                 <Play size={12} /> Watch
               </button>
-            </Link>
             <button
               onClick={toggleList}
               className="w-full bg-white/10 hover:bg-white/20 text-white py-1.5 rounded text-xs flex items-center justify-center gap-1 mb-1"
