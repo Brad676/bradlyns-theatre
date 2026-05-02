@@ -7,7 +7,7 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, email?: string) => Promise<void>;
   logout: () => void;
 };
 
@@ -44,8 +44,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   };
 
-  const register = async (username: string, password: string) => {
-    const r = await apiPost("auth/register", { username, password });
+  const register = async (username: string, password: string, email?: string) => {
+    const r = await apiPost("auth/register", { username, password, ...(email ? { email } : {}) });
     if (!r.ok) {
       const e = await r.json();
       throw new Error(e.error ?? "Registration failed");

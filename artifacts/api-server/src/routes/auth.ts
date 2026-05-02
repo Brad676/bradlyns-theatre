@@ -9,7 +9,7 @@ import { requireAuth } from "../middlewares/auth.js";
 const router = Router();
 
 router.post("/auth/register", async (req, res): Promise<void> => {
-  const { username, password } = req.body as { username?: string; password?: string };
+  const { username, password, email } = req.body as { username?: string; password?: string; email?: string };
   if (!username || !password) {
     res.status(400).json({ error: "Username and password are required" });
     return;
@@ -22,13 +22,24 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Password must be at least 6 characters" });
     return;
   }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "Invalid email address" });
+    return;
+  }
   const existing = await db.select().from(usersTable).where(eq(usersTable.username, username));
   if (existing.length > 0) {
     res.status(409).json({ error: "Username already taken" });
     return;
   }
+  if (email) {
+    const emailExists = await db.select().from(usersTable).where(eq(usersTable.email, email));
+    if (emailExists.length > 0) {
+      res.status(409).json({ error: "An account with this email already exists" });
+      return;
+    }
+  }
   const passwordHash = await bcrypt.hash(password, 10);
-  const [user] = await db.insert(usersTable).values({ username, passwordHash }).returning();
+  const [user] = await db.insert(usersTable).values({ username, passwordHash, email: email ?? null }).returning();
   const token = signToken({ userId: user.id, username: user.username });
   res.status(201).json({ token, user: { userId: user.id, username: user.username } });
 });

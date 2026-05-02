@@ -6,6 +6,7 @@ import { ToastDisplay } from "@/components/ToastDisplay";
 import { Navbar } from "@/components/Navbar";
 import { Sidebar } from "@/components/Sidebar";
 import { Footer } from "@/components/Footer";
+import { useAuth } from "@/context/AuthContext";
 
 const Home = lazy(() => import("@/pages/Home"));
 const Search = lazy(() => import("@/pages/Search"));
@@ -18,10 +19,11 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const MyRoom = lazy(() => import("@/pages/MyRoom"));
 const Rooms = lazy(() => import("@/pages/Rooms"));
 const RoomWatch = lazy(() => import("@/pages/RoomWatch"));
+const AuthGate = lazy(() => import("@/pages/AuthGate"));
 
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="flex items-center justify-center min-h-screen">
       <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
     </div>
   );
@@ -74,12 +76,32 @@ function Router() {
   );
 }
 
+function AppContent() {
+  const { user, loading } = useAuth();
+
+  if (loading) return <PageLoader />;
+
+  if (!user) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <AuthGate />
+      </Suspense>
+    );
+  }
+
+  return (
+    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+      <Router />
+    </WouterRouter>
+  );
+}
+
 export default function App() {
   return (
     <ToastProvider>
       <AuthProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AppContent />
         </WouterRouter>
         <ToastDisplay />
       </AuthProvider>
