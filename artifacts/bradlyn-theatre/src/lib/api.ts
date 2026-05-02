@@ -31,19 +31,29 @@ export async function externalFetch(path: string, params: Record<string, string 
   return r.json();
 }
 
-export async function directStreamFetch(subjectId: string): Promise<string | null> {
-  const r = await fetch(`${EXTERNAL_API_BASE}/stream/${subjectId}`);
+export async function directStreamFetch(subjectId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
+  const query = new URLSearchParams({ resolution, lang });
+  if (season && episode) {
+    query.set("se", String(season));
+    query.set("ep", String(episode));
+  }
+  const r = await fetch(`${EXTERNAL_API_BASE}/stream/${subjectId}?${query.toString()}`);
   if (!r.ok) return null;
   const j = await r.json() as { url?: string };
   return j.url ?? null;
 }
 
-export async function getStreamUrl(subjectId: string): Promise<string | null> {
-  return `${EXTERNAL_API_BASE}/stream/${subjectId}`;
+export async function getStreamUrl(subjectId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
+  const query = new URLSearchParams({ resolution, lang });
+  if (season && episode) {
+    query.set("se", String(season));
+    query.set("ep", String(episode));
+  }
+  return `${EXTERNAL_API_BASE}/stream/${subjectId}?${query.toString()}`;
 }
 
-export async function getSeriesStreamUrl(seriesId: string): Promise<string | null> {
-  return `${EXTERNAL_API_BASE}/stream/${seriesId}`;
+export async function getSeriesStreamUrl(seriesId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
+  return getStreamUrl(seriesId, season, episode, resolution, lang);
 }
 
 export async function apiPost(path: string, body: unknown): Promise<Response> {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Tv, Loader2 } from "lucide-react";
 import { VideoPlayer } from "@/components/VideoPlayer";
-import { externalFetch, apiGet } from "@/lib/api";
+import { externalFetch, apiGet, getStreamUrl } from "@/lib/api";
 import { type Subject } from "@/lib/api";
 
 type Episode = { episode: number; title: string };
@@ -35,17 +35,9 @@ export default function Watch() {
     setStreamUrl(null);
 
     try {
-      let url = `proxy/stream/${id}`;
-      const qp: string[] = [];
-      if (season && season > 1) qp.push(`season=${season}`);
-      if (ep && ep > 1) qp.push(`episode=${ep}`);
-      if (qp.length) url += `?${qp.join("&")}`;
-
-      const r = await apiGet(url);
-      if (!r.ok) throw new Error("stream fetch failed");
-      const data = await r.json() as { url?: string; error?: string };
-      if (!data.url) throw new Error("no url");
-      setStreamUrl(data.url);
+      const stream = await getStreamUrl(id, season, ep, "720", "En");
+      if (!stream) throw new Error("no stream url");
+      setStreamUrl(stream);
     } catch {
       setError("This title is currently unavailable. The stream resolver failed.");
     } finally {
@@ -71,7 +63,7 @@ export default function Watch() {
         }
       }).catch(() => {});
 
-    resolveStream(subjectId, seasonParam, episodeParam);
+    resolveStream(subjectId, isSeries ? seasonParam : undefined, isSeries ? episodeParam : undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId]);
 

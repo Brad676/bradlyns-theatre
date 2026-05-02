@@ -68,45 +68,16 @@ router.get("/proxy/*splat", async (req, res): Promise<void> => {
 
 router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
   const subjectId = req.params.subjectId as string;
-  const episode = req.query.episode as string | undefined;
+  const resolution = (req.query.resolution as string | undefined) ?? "720";
+  const lang = (req.query.lang as string | undefined) ?? "En";
   const season = req.query.season as string | undefined;
+  const episode = req.query.ep as string | undefined;
 
-  const buildUrl = (id: string) => {
-    let url = `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(id)}`;
-    if (season) url += `&season=${season}`;
-    if (episode) url += `&episode=${episode}`;
-    return url;
-  };
+  const url = season && episode
+    ? `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(subjectId)}&se=${encodeURIComponent(season)}&ep=${encodeURIComponent(episode)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`
+    : `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(subjectId)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`;
 
-  const tryFetch = async (streamUrl: string): Promise<string | null> => {
-    try {
-      const r = await fetch(streamUrl, {
-        headers: { "User-Agent": BROWSER_UA, "Referer": "https://movieapi.xcasper.space/" },
-        signal: AbortSignal.timeout(10000),
-        redirect: "follow",
-      });
-      if (!r.ok) return null;
-      const ct = r.headers.get("content-type") ?? "";
-      if (ct.includes("video") || ct.includes("octet-stream") || ct.includes("mpegurl") || ct.includes("x-mpegURL") || ct.includes("application/vnd.apple.mpegurl")) {
-        return r.url;
-      }
-      const text = await r.text();
-      if (text.trim().startsWith("http")) return text.trim();
-      try {
-        const j = JSON.parse(text);
-        return j.url ?? j.data?.url ?? j.data?.videoAddress?.url ?? null;
-      } catch {}
-    } catch {}
-    return null;
-  };
-
-  const primary = await tryFetch(buildUrl(subjectId));
-  if (primary) { res.json({ url: primary }); return; }
-
-  const fallback = await tryFetch(`https://cyber-stream-foxy-a5pz.vercel.app/movie/${subjectId}`);
-  if (fallback) { res.json({ url: fallback }); return; }
-
-  res.status(502).json({ error: "stream unavailable" });
+  res.json({ url });
 });
 
 router.get("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
