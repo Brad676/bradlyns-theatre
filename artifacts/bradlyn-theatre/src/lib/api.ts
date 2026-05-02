@@ -37,10 +37,7 @@ export async function directStreamFetch(subjectId: string, season?: number, epis
     query.set("se", String(season));
     query.set("ep", String(episode));
   }
-  const r = await fetch(`${EXTERNAL_API_BASE}/stream/${subjectId}?${query.toString()}`);
-  if (!r.ok) return null;
-  const j = await r.json() as { url?: string };
-  return j.url ?? null;
+  return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&${query.toString()}`;
 }
 
 export async function getStreamUrl(subjectId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
@@ -49,7 +46,7 @@ export async function getStreamUrl(subjectId: string, season?: number, episode?:
     query.set("se", String(season));
     query.set("ep", String(episode));
   }
-  return `${EXTERNAL_API_BASE}/stream/${subjectId}?${query.toString()}`;
+  return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&${query.toString()}`;
 }
 
 export async function getSeriesStreamUrl(seriesId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {

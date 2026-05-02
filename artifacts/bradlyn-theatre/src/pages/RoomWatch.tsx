@@ -5,6 +5,7 @@ import { VideoPlayer } from "@/components/VideoPlayer";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiGet, apiPost, type Room, type QueueItem } from "@/lib/api";
+import { getStreamUrl } from "@/lib/api";
 import { io, Socket } from "socket.io-client";
 import { AuthModal } from "@/components/AuthModal";
 
@@ -37,16 +38,9 @@ export default function RoomWatch() {
         setRoom(data);
         setQueue(data.queue ?? []);
         if (data.currentSubjectId) {
-          const query = new URLSearchParams({ resolution: "720", lang: "En" });
-          if (data.currentSubjectType === 2) {
-            const season = data.queue?.[0]?.seriesSeason;
-            const episode = data.queue?.[0]?.seriesEpisode;
-            if (season && episode) {
-              query.set("se", String(season));
-              query.set("ep", String(episode));
-            }
-          }
-          setStreamUrl(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/proxy/stream/${data.currentSubjectId}?${query.toString()}`);
+          const season = data.currentSubjectType === 2 ? data.queue?.[0]?.seriesSeason : undefined;
+          const episode = data.currentSubjectType === 2 ? data.queue?.[0]?.seriesEpisode : undefined;
+          getStreamUrl(data.currentSubjectId, season, episode, "720", "En").then(setStreamUrl).catch(() => {});
           setSyncTimestamp(data.currentTimestampSec ?? 0);
         }
       })
@@ -61,8 +55,7 @@ export default function RoomWatch() {
     s.emit("join-room", roomId);
     s.on("viewer-count", (count: number) => setViewerCount(count));
     s.on("host-play", ({ subjectId, subjectType, title, coverUrl, timestampSec }: { subjectId: string; subjectType: number; title: string; coverUrl: string; timestampSec?: number }) => {
-      const url = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/proxy/stream/${subjectId}?resolution=720&lang=En`;
-      setStreamUrl(url);
+      getStreamUrl(subjectId, undefined, undefined, "720", "En").then(setStreamUrl).catch(() => {});
       setSyncTimestamp(timestampSec ?? 0);
       setRoom(prev => prev ? { ...prev, state: "playing", currentSubjectId: subjectId, currentTitle: title, currentCoverUrl: coverUrl } : prev);
       toast(`Now playing: ${title}`, "info");
