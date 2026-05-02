@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Search as SearchIcon, X, Clock } from "lucide-react";
 import { useLocation, useSearch } from "wouter";
 import { Card } from "@/components/Card";
-import { type Subject, externalFetch, apiPost, apiGet } from "@/lib/api";
+import { type Subject, searchSubjects, apiPost, apiGet } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function SearchPage() {
@@ -32,7 +32,7 @@ export default function SearchPage() {
     if (!kw.trim()) { setResults([]); return; }
     setLoading(true);
     try {
-      const data = await externalFetch("search", { keyword: kw, page: pg, perPage: 24, subjectType: 0 }) as { data: { items: Subject[]; pager: { hasMore: boolean } } };
+      const data = await searchSubjects(kw, pg, 24, 0) as { data: { items: Subject[]; pager: { hasMore: boolean } } };
       const items = data.data?.items ?? [];
       if (append) setResults(prev => [...prev, ...items]);
       else setResults(items);
