@@ -88,7 +88,7 @@ router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
       if (!r.ok) return null;
       const ct = r.headers.get("content-type") ?? "";
       if (ct.includes("video") || ct.includes("octet-stream") || ct.includes("mpegurl") || ct.includes("x-mpegURL") || ct.includes("application/vnd.apple.mpegurl")) {
-        return streamUrl;
+        return r.url;
       }
       const text = await r.text();
       if (text.trim().startsWith("http")) return text.trim();
