@@ -4,7 +4,7 @@ import {
   Home, Search, Film, Tv, Bookmark, Users, User,
   Shuffle, Settings, ChevronLeft, ChevronRight,
   TrendingUp, Flame, Globe, Laugh, Video, Heart,
-  Share2, MessageCircle, Facebook
+  Share2, MessageCircle, Facebook, Music2
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { externalFetch } from "@/lib/api";
@@ -22,6 +22,7 @@ const NAV_CATEGORIES = [
   { href: "/browse?sort=trending", icon: TrendingUp, label: "Trending" },
   { href: "/browse?sort=hot", icon: Flame, label: "Hot" },
   { href: "/browse?region=local", icon: Globe, label: "Local Shows" },
+  { href: "/browse?genre=music", icon: Music2, label: "Music" },
   { href: "/rooms", icon: Users, label: "Rooms" },
 ];
 
