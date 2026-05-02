@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { HeroSection } from "@/components/HeroSection";
 import { Carousel } from "@/components/Carousel";
+import { Card } from "@/components/Card";
 import { type Subject, externalFetch, apiGet } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -103,12 +104,17 @@ export default function Home() {
               <span className="w-1 h-5 rounded-full neon-glow inline-block" style={{ background: "var(--neon-magenta)" }} />
               Top 10 Today
             </h2>
-            <div className="carousel-track px-4">
+            <div className="flex gap-2 px-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
               {topMovies.slice(0, 10).map((s, i) => (
                 <div key={s.subjectId} className="relative flex-shrink-0">
-                  <span className="absolute -left-2 bottom-0 z-10 text-5xl font-black text-transparent" style={{ WebkitTextStroke: "1px rgba(0,243,255,0.5)" }}>{i + 1}</span>
-                  <div className="ml-4">
-                    <Carousel title="" subjects={[s]} />
+                  <span
+                    className="absolute -left-1 bottom-10 z-10 text-5xl font-black text-transparent select-none pointer-events-none"
+                    style={{ WebkitTextStroke: "1.5px rgba(0,243,255,0.45)", lineHeight: 1 }}
+                  >
+                    {i + 1}
+                  </span>
+                  <div className="ml-5">
+                    <Card subject={s} />
                   </div>
                 </div>
               ))}

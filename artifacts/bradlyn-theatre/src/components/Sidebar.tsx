@@ -23,7 +23,7 @@ const NAV_CATEGORIES = [
   { href: "/browse?sort=trending", icon: TrendingUp, label: "Trending" },
   { href: "/browse?sort=hot", icon: Flame, label: "Hot" },
   { href: "/browse?region=local", icon: Globe, label: "Local Shows" },
-  { href: "/browse?genre=Music", icon: Music2, label: "Music" },
+  { href: "/music", icon: Music2, label: "Music" },
   { href: "/rooms", icon: Users, label: "Rooms" },
 ];
 

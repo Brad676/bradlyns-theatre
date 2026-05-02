@@ -13,6 +13,7 @@ import { useWelcomeVoice } from "@/hooks/useWelcomeVoice";
 const Home = lazy(() => import("@/pages/Home"));
 const Search = lazy(() => import("@/pages/Search"));
 const Browse = lazy(() => import("@/pages/Browse"));
+const Music = lazy(() => import("@/pages/Music"));
 const Detail = lazy(() => import("@/pages/Detail"));
 const Watch = lazy(() => import("@/pages/Watch"));
 const Staff = lazy(() => import("@/pages/Staff"));
@@ -50,6 +51,7 @@ function AppRouter() {
       <Route path="/" component={() => <WithLayout><Home /></WithLayout>} />
       <Route path="/search" component={() => <WithLayout><Search /></WithLayout>} />
       <Route path="/browse" component={() => <WithLayout><Browse /></WithLayout>} />
+      <Route path="/music" component={() => <WithLayout><Music /></WithLayout>} />
       <Route path="/detail/:id" component={() => <WithLayout><Detail /></WithLayout>} />
       <Route path="/staff/:id" component={() => <WithLayout><Staff /></WithLayout>} />
       <Route path="/profile" component={() => <WithLayout><Profile /></WithLayout>} />

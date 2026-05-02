@@ -64,10 +64,12 @@ export default function Browse() {
 
     try {
       const data = await externalFetch(endpoint, params) as {
-        data: { items?: Subject[]; subjectList?: Subject[]; pager?: { hasMore: boolean } }
+        data: { items?: Subject[]; subjectList?: Subject[]; movie?: Subject[]; series?: Subject[]; pager?: { hasMore: boolean } }
       };
-      const raw = data.data?.items ?? data.data?.subjectList ?? [];
-      const items = raw.filter((s: Subject) => s.subjectType === 1 || s.subjectType === 2);
+      const raw = data.data?.items
+        ?? data.data?.subjectList
+        ?? [...(data.data?.movie ?? []), ...(data.data?.series ?? [])];
+      const items = genre === "Music" ? raw : raw.filter((s: Subject) => s.subjectType === 1 || s.subjectType === 2);
       if (append) setResults(prev => [...prev, ...items]);
       else setResults(items);
       setHasMore(data.data?.pager?.hasMore ?? items.length === 24);
