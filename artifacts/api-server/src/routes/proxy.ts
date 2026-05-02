@@ -64,6 +64,49 @@ router.get("/proxy/*splat", async (req, res): Promise<void> => {
   }
 });
 
+router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
+  const subjectId = req.params.subjectId as string;
+  const episode = req.query.episode as string | undefined;
+  const season = req.query.season as string | undefined;
+
+  const buildUrl = (id: string) => {
+    let url = `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(id)}`;
+    if (season) url += `&season=${season}`;
+    if (episode) url += `&episode=${episode}`;
+    return url;
+  };
+
+  const tryFetch = async (streamUrl: string): Promise<string | null> => {
+    try {
+      const r = await fetch(streamUrl, {
+        headers: { "User-Agent": BROWSER_UA, "Referer": "https://movieapi.xcasper.space/" },
+        signal: AbortSignal.timeout(10000),
+        redirect: "follow",
+      });
+      if (!r.ok) return null;
+      const ct = r.headers.get("content-type") ?? "";
+      if (ct.includes("video") || ct.includes("octet-stream") || ct.includes("mpegurl") || ct.includes("x-mpegURL")) {
+        return streamUrl;
+      }
+      const text = await r.text();
+      if (text.trim().startsWith("http")) return text.trim();
+      try {
+        const j = JSON.parse(text);
+        return j.url ?? j.data?.url ?? j.data?.videoAddress?.url ?? null;
+      } catch {}
+    } catch {}
+    return null;
+  };
+
+  const primary = await tryFetch(buildUrl(subjectId));
+  if (primary) { res.json({ url: primary }); return; }
+
+  const fallback = await tryFetch(`https://cyber-stream-foxy-a5pz.vercel.app/movie/${subjectId}`);
+  if (fallback) { res.json({ url: fallback }); return; }
+
+  res.json({ url: buildUrl(subjectId), direct: true });
+});
+
 router.get("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
   const subjectIdRaw = req.params.subjectId;
   const subjectId = Array.isArray(subjectIdRaw) ? subjectIdRaw[0] : subjectIdRaw;

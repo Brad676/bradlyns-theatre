@@ -196,6 +196,24 @@
   object-fit: contain;
 }
 
+/* Fullscreen: release aspect-ratio constraint so video fills screen */
+.video-container:fullscreen,
+.video-container:-webkit-full-screen,
+.video-container:-moz-full-screen,
+.video-container:-ms-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  aspect-ratio: unset !important;
+  max-width: none !important;
+  border-radius: 0 !important;
+}
+.video-container:fullscreen video,
+.video-container:-webkit-full-screen video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .star-rating .star {
   cursor: pointer;
   transition: transform 0.1s ease;

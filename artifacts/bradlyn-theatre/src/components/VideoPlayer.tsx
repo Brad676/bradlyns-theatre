@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, Download, Tv, X,
-  Monitor, Wifi,
+  Monitor, Wifi, Airplay,
 } from "lucide-react";
 import { apiPost, apiGet } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -19,6 +19,7 @@ type Props = {
 };
 
 function formatTime(s: number): string {
+  if (!isFinite(s)) return "0:00";
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = Math.floor(s % 60);
@@ -41,8 +42,8 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"speed" | "quality">("speed");
   const [buffered, setBuffered] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [castState, setCastState] = useState<"idle" | "connecting" | "casting" | "unavailable">("idle");
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [castState, setCastState] = useState<"idle" | "connecting" | "casting">("idle");
   const [showCastModal, setShowCastModal] = useState(false);
   const [downloadState, setDownloadState] = useState<"idle" | "downloading">("idle");
   const hideControlsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,17 +76,43 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     return () => { if (saveTimestampRef.current) clearInterval(saveTimestampRef.current); };
   }, [user, subjectId, speed]);
 
-  const autoHideControls = () => {
+  const autoHideControls = useCallback(() => {
     if (hideControlsRef.current) clearTimeout(hideControlsRef.current);
     setShowControls(true);
     hideControlsRef.current = setTimeout(() => setShowControls(false), 3000);
-  };
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = containerRef.current;
+    const vid = videoRef.current;
+    if (!el || !vid) return;
+    try {
+      if (!document.fullscreenElement) {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else {
+          type WebkitVid = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+          const wvid = vid as WebkitVid;
+          if (wvid.webkitEnterFullscreen) wvid.webkitEnterFullscreen();
+        }
+        try {
+          type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void> };
+          await (screen.orientation as LockableOrientation).lock?.("landscape");
+        } catch {}
+      } else {
+        await document.exitFullscreen();
+        try { screen.orientation.unlock?.(); } catch {}
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     autoHideControls();
     const onKey = (e: KeyboardEvent) => {
       const vid = videoRef.current;
       if (!vid) return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.code === "Space") { e.preventDefault(); vid.paused ? vid.play() : vid.pause(); }
       if (e.code === "ArrowLeft") { e.preventDefault(); vid.currentTime = Math.max(0, vid.currentTime - 10); }
       if (e.code === "ArrowRight") { e.preventDefault(); vid.currentTime = Math.min(vid.duration, vid.currentTime + 10); }
@@ -94,29 +121,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
-  const toggleFullscreen = async () => {
-    const el = containerRef.current;
-    const vid = videoRef.current;
-    if (!el || !vid) return;
-    try {
-      if (!document.fullscreenElement) {
-        // Try container first, fall back to video element for mobile
-        if (el.requestFullscreen) await el.requestFullscreen();
-        else if ((vid as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen) {
-          (vid as HTMLVideoElement & { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
-        }
-        setFullscreen(true);
-        // Lock orientation to landscape on mobile
-        try { await (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.("landscape"); } catch {}
-      } else {
-        await document.exitFullscreen();
-        setFullscreen(false);
-        try { screen.orientation.unlock?.(); } catch {}
-      }
-    } catch {}
-  };
+  }, [autoHideControls, toggleFullscreen]);
 
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement);
@@ -134,7 +139,8 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     tapRef.current = now;
   };
 
-  const handleVideoClick = () => {
+  const handleVideoClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     const vid = videoRef.current;
     if (!vid) return;
     vid.paused ? vid.play() : vid.pause();
@@ -168,42 +174,36 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     setShowSettings(false);
   };
 
-  const handleDownload = async () => {
+  const handleDownload = () => {
     if (downloadState === "downloading") return;
     setDownloadState("downloading");
-    try {
-      const a = document.createElement("a");
-      a.href = src;
-      a.download = `${title ?? "video"}.mp4`;
-      a.target = "_blank";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch {}
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = `${title ?? "video"}.mp4`;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     setTimeout(() => setDownloadState("idle"), 3000);
   };
 
   const handleCastToTV = async () => {
     const vid = videoRef.current;
     if (!vid) return;
-
-    // Try Remote Playback API (Chromecast, Smart TVs)
-    type VideoWithRemote = HTMLVideoElement & { remote?: { watchAvailability: (cb: (available: boolean) => void) => Promise<void>; prompt: () => Promise<void> } };
-    const vidWithRemote = vid as VideoWithRemote;
-
-    if (vidWithRemote.remote) {
+    type VideoWithRemote = HTMLVideoElement & {
+      remote?: { prompt: () => Promise<void> };
+    };
+    const vr = vid as VideoWithRemote;
+    if (vr.remote) {
       try {
         setCastState("connecting");
-        await vidWithRemote.remote.prompt();
+        await vr.remote.prompt();
         setCastState("casting");
         return;
       } catch {
         setCastState("idle");
       }
     }
-
-    // Fallback: show cast instructions modal
-    setCastState("unavailable");
     setShowCastModal(true);
   };
 
@@ -229,9 +229,10 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     <>
       <div
         ref={containerRef}
-        className="video-container select-none"
+        className={`video-container select-none ${fullscreen ? "video-fullscreen" : ""}`}
         style={{ cursor: showControls ? "default" : "none" }}
         onMouseMove={autoHideControls}
+        onTouchStart={autoHideControls}
         onClick={handleDoubleTap}
       >
         <video
@@ -248,26 +249,27 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
             if (vid.buffered.length > 0) setBuffered(vid.buffered.end(vid.buffered.length - 1));
           }}
           onDurationChange={() => setDuration(videoRef.current?.duration ?? 0)}
-          onWaiting={() => setLoading(true)}
-          onCanPlay={() => setLoading(false)}
+          onWaiting={() => setVideoLoading(true)}
+          onCanPlay={() => setVideoLoading(false)}
+          onLoadedData={() => setVideoLoading(false)}
           onEnded={savedOnEnd}
           playsInline
           className="w-full h-full"
           style={{ background: "#000", outline: "none" }}
         />
 
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center">
+        {videoLoading && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-10 h-10 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
           </div>
         )}
 
         {showControls && (
           <div className="absolute inset-0 flex flex-col justify-between" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, transparent 35%, rgba(0,0,0,0.4) 100%)" }}>
-            {/* Top bar: title + quality badge */}
+            {/* Top bar */}
             <div className="flex items-center justify-between px-4 pt-3">
-              {title && <p className="text-white font-medium text-sm drop-shadow">{title}</p>}
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-black/40 border border-white/10 ${resolutionColor(resolution)}`}>
+              {title && <p className="text-white font-medium text-sm drop-shadow truncate max-w-[70%]">{title}</p>}
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-black/40 border border-white/10 ml-auto ${resolutionColor(resolution)}`}>
                 {resolution}
               </span>
             </div>
@@ -280,7 +282,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                 <input
                   type="range" min={0} max={duration || 100} value={currentTime}
                   onChange={seek} onClick={e => e.stopPropagation()}
-                  className="absolute inset-0 w-full opacity-0 cursor-pointer h-full"
+                  className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10"
                 />
                 <div className="absolute left-0 top-0 h-full rounded-full transition-all" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%`, background: "var(--neon-cyan)" }} />
                 <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
@@ -310,12 +312,11 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
 
                 {/* Right side controls */}
                 <div className="ml-auto flex items-center gap-1" onClick={e => e.stopPropagation()}>
-
-                  {/* Cast to TV */}
+                  {/* Cast */}
                   <button
                     onClick={handleCastToTV}
-                    title="Cast to TV"
-                    className={`p-1.5 rounded transition-colors ${castState === "casting" ? "text-cyan-400" : "text-white hover:text-cyan-400"}`}
+                    title={castState === "casting" ? "Casting to TV" : "Cast to TV"}
+                    className={`p-1.5 rounded transition-colors ${castState === "casting" ? "text-cyan-400" : castState === "connecting" ? "text-yellow-400 animate-pulse" : "text-white hover:text-cyan-400"}`}
                   >
                     <Tv size={15} />
                   </button>
@@ -329,7 +330,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                     <Download size={15} />
                   </button>
 
-                  {/* Settings (speed + quality) */}
+                  {/* Settings */}
                   <div className="relative">
                     <button
                       onClick={() => setShowSettings(s => !s)}
@@ -339,16 +340,10 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                     </button>
                     {showSettings && (
                       <div className="absolute bottom-full right-0 mb-2 glass rounded-xl border border-white/10 overflow-hidden w-48 shadow-2xl" onClick={e => e.stopPropagation()}>
-                        {/* Tabs */}
                         <div className="flex border-b border-white/10">
-                          <button onClick={() => setSettingsTab("speed")} className={`flex-1 py-2 text-xs font-medium transition-colors ${settingsTab === "speed" ? "text-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-white"}`}>
-                            Speed
-                          </button>
-                          <button onClick={() => setSettingsTab("quality")} className={`flex-1 py-2 text-xs font-medium transition-colors ${settingsTab === "quality" ? "text-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-white"}`}>
-                            Quality
-                          </button>
+                          <button onClick={() => setSettingsTab("speed")} className={`flex-1 py-2 text-xs font-medium transition-colors ${settingsTab === "speed" ? "text-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-white"}`}>Speed</button>
+                          <button onClick={() => setSettingsTab("quality")} className={`flex-1 py-2 text-xs font-medium transition-colors ${settingsTab === "quality" ? "text-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-white"}`}>Quality</button>
                         </div>
-
                         {settingsTab === "speed" && (
                           <div>
                             {[0.5, 0.75, 1, 1.25, 1.5, 2].map(s => (
@@ -359,7 +354,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                             ))}
                           </div>
                         )}
-
                         {settingsTab === "quality" && (
                           <div>
                             {(["1080p", "720p", "480p"] as Resolution[]).map(res => (
@@ -370,7 +364,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                                   {res === "720p" && <span className="ml-1.5 text-[10px] text-green-500">SD</span>}
                                   {res === "480p" && <span className="ml-1.5 text-[10px] text-yellow-500">Low</span>}
                                 </span>
-                                {resolution === res && <span className={`w-1.5 h-1.5 rounded-full ${resolutionColor(res)}`} style={{ background: "currentColor" }} />}
+                                {resolution === res && <span className={`w-1.5 h-1.5 rounded-full`} style={{ background: resolution === res ? "currentColor" : "transparent" }} />}
                               </button>
                             ))}
                             <p className="text-[10px] text-gray-600 px-4 py-2 border-t border-white/5">Quality may vary by stream</p>
@@ -395,27 +389,39 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
       {showCastModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowCastModal(false)}>
           <div className="glass rounded-2xl border border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-bold flex items-center gap-2"><Tv size={18} className="text-cyan-400" /> Cast to TV</h3>
-              <button onClick={() => setShowCastModal(false)} className="text-gray-400 hover:text-white p-1"><X size={16} /></button>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white font-bold text-base flex items-center gap-2">
+                <Tv size={18} className="text-cyan-400" /> Cast to Your TV
+              </h3>
+              <button onClick={() => setShowCastModal(false)} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
+                <X size={16} />
+              </button>
             </div>
+            <p className="text-gray-400 text-sm mb-4">Choose how to watch on your big screen:</p>
             <div className="space-y-3">
-              <div className="flex items-start gap-3 bg-white/5 rounded-xl p-3">
-                <Monitor size={18} className="text-cyan-400 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-3 bg-white/5 rounded-xl p-3 border border-white/5">
+                <Airplay size={18} className="text-cyan-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-white text-sm font-medium">Mirror your screen</p>
-                  <p className="text-gray-400 text-xs mt-0.5">Use your device's built-in screen mirror — AirPlay on iOS/macOS, or Cast from Chrome/Android.</p>
+                  <p className="text-white text-sm font-semibold">AirPlay (iPhone / Mac)</p>
+                  <p className="text-gray-400 text-xs mt-0.5 leading-relaxed">Tap the AirPlay icon in your browser and select your Apple TV or AirPlay device.</p>
                 </div>
               </div>
-              <div className="flex items-start gap-3 bg-white/5 rounded-xl p-3">
-                <Wifi size={18} className="text-purple-400 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-3 bg-white/5 rounded-xl p-3 border border-white/5">
+                <Monitor size={18} className="text-purple-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-white text-sm font-medium">Chromecast / Smart TV</p>
-                  <p className="text-gray-400 text-xs mt-0.5">Open this page in Chrome and click the cast icon in the browser menu to cast to any Chromecast-enabled device.</p>
+                  <p className="text-white text-sm font-semibold">Chromecast (Android / Chrome)</p>
+                  <p className="text-gray-400 text-xs mt-0.5 leading-relaxed">Open this page in Chrome, click the three-dot menu → Cast, then choose your Chromecast or Smart TV.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 bg-white/5 rounded-xl p-3 border border-white/5">
+                <Wifi size={18} className="text-green-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-white text-sm font-semibold">Screen Mirror</p>
+                  <p className="text-gray-400 text-xs mt-0.5 leading-relaxed">Use your device's built-in screen mirroring to display the full screen on your TV wirelessly.</p>
                 </div>
               </div>
             </div>
-            <button onClick={() => setShowCastModal(false)} className="mt-4 w-full neon-btn py-2 rounded-lg text-sm font-medium">Got it</button>
+            <button onClick={() => setShowCastModal(false)} className="mt-5 w-full neon-btn py-2.5 rounded-xl text-sm font-semibold">Got it</button>
           </div>
         </div>
       )}

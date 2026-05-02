@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation } from "wouter";
-import { ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Tv } from "lucide-react";
+import { ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Tv, Loader2 } from "lucide-react";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { externalFetch, apiGet } from "@/lib/api";
 import { type Subject } from "@/lib/api";
@@ -14,7 +14,6 @@ export default function Watch() {
   const [location] = useLocation();
   const subjectId = params?.id ?? "";
 
-  // Parse season/episode from query string
   const searchParams = new URLSearchParams(location.split("?")[1] ?? "");
   const seasonParam = parseInt(searchParams.get("season") ?? "1", 10) || 1;
   const episodeParam = parseInt(searchParams.get("episode") ?? "1", 10) || 1;
@@ -23,27 +22,52 @@ export default function Watch() {
   const [subject, setSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tryCount, setTryCount] = useState(0);
   const [episodeData, setEpisodeData] = useState<EpisodeData | null>(null);
   const [currentSeason, setCurrentSeason] = useState(seasonParam);
   const [currentEpisode, setCurrentEpisode] = useState(episodeParam);
   const [, navigate] = useLocation();
+  const resolvedRef = useRef(false);
 
   const isSeries = subject?.subjectType === 2;
 
+  const resolveStream = async (id: string, season?: number, ep?: number) => {
+    resolvedRef.current = false;
+    setStreamUrl(null);
+    setError(null);
+    setLoading(true);
+    try {
+      let url = `proxy/stream/${id}`;
+      const qp: string[] = [];
+      if (season && season > 1) qp.push(`season=${season}`);
+      if (ep && ep > 1) qp.push(`episode=${ep}`);
+      if (qp.length) url += `?${qp.join("&")}`;
+
+      const r = await apiGet(url);
+      if (!r.ok) throw new Error("stream fetch failed");
+      const data = await r.json() as { url?: string };
+      if (data.url) {
+        setStreamUrl(data.url);
+        resolvedRef.current = true;
+      } else {
+        throw new Error("no url");
+      }
+    } catch {
+      setError("This title is currently unavailable. Please try another.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!subjectId) return;
-    setLoading(true);
-    setError(null);
-    setStreamUrl(null);
-    setTryCount(0);
+    setSubject(null);
+    setEpisodeData(null);
 
     externalFetch("detail", { subjectId })
       .then((d: unknown) => {
         const data = d as { data: { subject: Subject } };
         const s = data.data?.subject ?? null;
         setSubject(s);
-        // If series, load episode data
         if (s?.subjectType === 2) {
           apiGet(`proxy/episodes/${subjectId}?title=${encodeURIComponent(s.title ?? "")}`)
             .then(r => r.json())
@@ -52,20 +76,18 @@ export default function Watch() {
         }
       }).catch(() => {});
 
-    const url = `https://movieapi.xcasper.space/api/bff/stream?subjectId=${subjectId}`;
-    setStreamUrl(url);
-    setLoading(false);
+    resolveStream(subjectId, seasonParam, episodeParam);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId]);
 
-  const handleError = () => {
-    if (tryCount < 1) {
-      setTryCount(c => c + 1);
-      const altUrl = `https://cyber-stream-foxy-a5pz.vercel.app/movie/${subjectId}`;
-      setStreamUrl(altUrl);
-    } else {
-      setError("This title is currently unavailable for streaming. Please try another title.");
+  useEffect(() => {
+    setCurrentSeason(seasonParam);
+    setCurrentEpisode(episodeParam);
+    if (subjectId && (seasonParam > 1 || episodeParam > 1)) {
+      resolveStream(subjectId, seasonParam, episodeParam);
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonParam, episodeParam]);
 
   const goToEpisode = (season: number, episode: number) => {
     setCurrentSeason(season);
@@ -80,23 +102,15 @@ export default function Watch() {
   const hasNext = currentEpisode < totalEpisodesInSeason;
 
   const displayTitle = isSeries
-    ? `${subject?.title} — S${currentSeason}:E${currentEpisode}${currentEpisodeData?.title ? ` · ${currentEpisodeData.title}` : ""}`
+    ? `${subject?.title ?? ""} — S${currentSeason}:E${currentEpisode}${currentEpisodeData?.title ? ` · ${currentEpisodeData.title}` : ""}`
     : subject?.title;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-10 h-10 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-3 glass absolute top-0 left-0 right-0 z-10">
         <Link href={subject ? `/detail/${subjectId}` : "/"}>
-          <button className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm">
+          <button className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm transition-colors">
             <ArrowLeft size={18} />
             <span className="hidden sm:inline truncate max-w-[160px]">{subject?.title ?? "Back"}</span>
           </button>
@@ -104,11 +118,19 @@ export default function Watch() {
         {isSeries && displayTitle && (
           <p className="text-white text-sm font-medium truncate flex-1 text-center">{displayTitle}</p>
         )}
+        {!isSeries && subject?.title && (
+          <p className="text-white text-sm font-medium truncate flex-1 text-center">{subject.title}</p>
+        )}
       </div>
 
-      {/* Video */}
+      {/* Video area */}
       <div className="flex-1 flex items-center justify-center pt-12">
-        {error ? (
+        {loading ? (
+          <div className="text-center">
+            <Loader2 size={40} className="text-cyan-400 mx-auto mb-3 animate-spin" />
+            <p className="text-gray-400 text-sm">Loading stream…</p>
+          </div>
+        ) : error ? (
           <div className="text-center max-w-md mx-auto px-4">
             <AlertTriangle size={40} className="text-yellow-500 mx-auto mb-4" />
             <h2 className="text-white font-bold text-xl mb-2">Streaming Unavailable</h2>
@@ -132,11 +154,9 @@ export default function Watch() {
       </div>
 
       {/* Series episode navigator */}
-      {isSeries && episodeData && (
+      {isSeries && episodeData && !loading && (
         <div className="glass border-t border-white/5">
-          {/* Season + episode nav row */}
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-            {/* Prev episode */}
             <button
               onClick={() => hasPrev && goToEpisode(currentSeason, currentEpisode - 1)}
               disabled={!hasPrev}
@@ -145,7 +165,6 @@ export default function Watch() {
               <ChevronLeft size={14} /> Prev
             </button>
 
-            {/* Season selector */}
             <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
               {episodeData.seasons.map(s => (
                 <button
@@ -162,13 +181,11 @@ export default function Watch() {
               ))}
             </div>
 
-            {/* Current info */}
             <div className="flex items-center gap-1.5 text-sm text-white font-medium flex-shrink-0">
               <Tv size={14} className="text-cyan-400" />
               S{currentSeason} E{currentEpisode}
             </div>
 
-            {/* Next episode */}
             <button
               onClick={() => hasNext && goToEpisode(currentSeason, currentEpisode + 1)}
               disabled={!hasNext}
@@ -178,7 +195,6 @@ export default function Watch() {
             </button>
           </div>
 
-          {/* Episode list for current season */}
           <div className="max-w-6xl mx-auto px-4 pb-3">
             <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
               {currentSeasonData?.episodes.map(ep => (
