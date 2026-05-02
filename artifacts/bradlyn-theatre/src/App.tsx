@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { ToastDisplay } from "@/components/ToastDisplay";
 import { Navbar } from "@/components/Navbar";
+import { Sidebar } from "@/components/Sidebar";
 import { Footer } from "@/components/Footer";
 
 const Home = lazy(() => import("@/pages/Home"));
@@ -30,8 +31,11 @@ function WithLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Navbar />
-      <Suspense fallback={<PageLoader />}>{children}</Suspense>
-      <Footer />
+      <Sidebar />
+      <div className="pl-16">
+        <Suspense fallback={<PageLoader />}>{children}</Suspense>
+        <Footer />
+      </div>
     </>
   );
 }
