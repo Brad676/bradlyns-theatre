@@ -46,6 +46,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [castState, setCastState] = useState<"idle" | "connecting" | "casting">("idle");
   const [showCastModal, setShowCastModal] = useState(false);
   const [downloadState, setDownloadState] = useState<"idle" | "downloading">("idle");
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const hideControlsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimestampRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { user } = useAuth();
@@ -54,6 +55,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   useEffect(() => {
     const vid = videoRef.current;
     if (!vid) return;
+    setPlaybackError(null);
     if (user && subjectId) {
       apiGet(`user/history`).then(r => r.json()).then((history: { subjectId: string; timestampSec: number; playbackSpeed: number }[]) => {
         const entry = history.find(h => h.subjectId === subjectId);
@@ -172,6 +174,16 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     setShowSettings(false);
   };
 
+  const describeVideoError = () => {
+    const vid = videoRef.current;
+    const code = vid?.error?.code;
+    if (code === MediaError.MEDIA_ERR_ABORTED) return "Playback was interrupted.";
+    if (code === MediaError.MEDIA_ERR_NETWORK) return "Network error while loading the stream.";
+    if (code === MediaError.MEDIA_ERR_DECODE) return "The stream format could not be decoded.";
+    if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return "This stream format is not supported.";
+    return "The video could not be loaded.";
+  };
+
   const handleDownload = () => {
     if (downloadState === "downloading") return;
     setDownloadState("downloading");
@@ -248,6 +260,10 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
           onWaiting={() => setVideoLoading(true)}
           onCanPlay={() => setVideoLoading(false)}
           onLoadedData={() => setVideoLoading(false)}
+          onError={() => {
+            setVideoLoading(false);
+            setPlaybackError(describeVideoError());
+          }}
           onEnded={savedOnEnd}
           playsInline
           className="w-full h-full"
@@ -257,6 +273,15 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
         {videoLoading && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-10 h-10 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+          </div>
+        )}
+
+        {playbackError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6 text-center">
+            <div className="max-w-sm">
+              <h3 className="text-white font-semibold text-lg mb-2">Playback error</h3>
+              <p className="text-gray-300 text-sm">{playbackError}</p>
+            </div>
           </div>
         )}
 

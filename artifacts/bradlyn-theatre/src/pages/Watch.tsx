@@ -43,11 +43,11 @@ export default function Watch() {
 
       const r = await apiGet(url);
       if (!r.ok) throw new Error("stream fetch failed");
-      const data = await r.json() as { url?: string };
+      const data = await r.json() as { url?: string; error?: string };
       if (!data.url) throw new Error("no url");
       setStreamUrl(data.url);
     } catch {
-      setError("This title is currently unavailable. Please try another.");
+      setError("This title is currently unavailable. The stream resolver failed.");
     } finally {
       setLoading(false);
     }
