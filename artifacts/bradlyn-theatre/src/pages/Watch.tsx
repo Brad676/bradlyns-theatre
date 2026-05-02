@@ -26,15 +26,14 @@ export default function Watch() {
   const [currentSeason, setCurrentSeason] = useState(seasonParam);
   const [currentEpisode, setCurrentEpisode] = useState(episodeParam);
   const [, navigate] = useLocation();
-  const resolvedRef = useRef(false);
 
   const isSeries = subject?.subjectType === 2;
 
   const resolveStream = async (id: string, season?: number, ep?: number) => {
-    resolvedRef.current = false;
-    setStreamUrl(null);
-    setError(null);
     setLoading(true);
+    setError(null);
+    setStreamUrl(null);
+
     try {
       let url = `proxy/stream/${id}`;
       const qp: string[] = [];
@@ -45,12 +44,8 @@ export default function Watch() {
       const r = await apiGet(url);
       if (!r.ok) throw new Error("stream fetch failed");
       const data = await r.json() as { url?: string };
-      if (data.url) {
-        setStreamUrl(data.url);
-        resolvedRef.current = true;
-      } else {
-        throw new Error("no url");
-      }
+      if (!data.url) throw new Error("no url");
+      setStreamUrl(data.url);
     } catch {
       setError("This title is currently unavailable. Please try another.");
     } finally {
@@ -107,7 +102,6 @@ export default function Watch() {
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
-      {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-3 glass absolute top-0 left-0 right-0 z-10">
         <Link href={subject ? `/detail/${subjectId}` : "/"}>
           <button className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm transition-colors">
@@ -115,15 +109,11 @@ export default function Watch() {
             <span className="hidden sm:inline truncate max-w-[160px]">{subject?.title ?? "Back"}</span>
           </button>
         </Link>
-        {isSeries && displayTitle && (
+        {displayTitle && (
           <p className="text-white text-sm font-medium truncate flex-1 text-center">{displayTitle}</p>
-        )}
-        {!isSeries && subject?.title && (
-          <p className="text-white text-sm font-medium truncate flex-1 text-center">{subject.title}</p>
         )}
       </div>
 
-      {/* Video area */}
       <div className="flex-1 flex items-center justify-center pt-12">
         {loading ? (
           <div className="text-center">
@@ -153,7 +143,6 @@ export default function Watch() {
         ) : null}
       </div>
 
-      {/* Series episode navigator */}
       {isSeries && episodeData && !loading && (
         <div className="glass border-t border-white/5">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">

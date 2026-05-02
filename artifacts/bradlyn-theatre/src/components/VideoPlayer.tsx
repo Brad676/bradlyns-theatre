@@ -88,12 +88,10 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     if (!el || !vid) return;
     try {
       if (!document.fullscreenElement) {
-        if (el.requestFullscreen) {
-          await el.requestFullscreen();
-        } else {
+        if (el.requestFullscreen) await el.requestFullscreen();
+        else {
           type WebkitVid = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
-          const wvid = vid as WebkitVid;
-          if (wvid.webkitEnterFullscreen) wvid.webkitEnterFullscreen();
+          (vid as WebkitVid).webkitEnterFullscreen?.();
         }
         try {
           type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void> };
@@ -190,9 +188,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const handleCastToTV = async () => {
     const vid = videoRef.current;
     if (!vid) return;
-    type VideoWithRemote = HTMLVideoElement & {
-      remote?: { prompt: () => Promise<void> };
-    };
+    type VideoWithRemote = HTMLVideoElement & { remote?: { prompt: () => Promise<void> } };
     const vr = vid as VideoWithRemote;
     if (vr.remote) {
       try {
@@ -266,7 +262,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
 
         {showControls && (
           <div className="absolute inset-0 flex flex-col justify-between" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, transparent 35%, rgba(0,0,0,0.4) 100%)" }}>
-            {/* Top bar */}
             <div className="flex items-center justify-between px-4 pt-3">
               {title && <p className="text-white font-medium text-sm drop-shadow truncate max-w-[70%]">{title}</p>}
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-black/40 border border-white/10 ml-auto ${resolutionColor(resolution)}`}>
@@ -274,9 +269,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
               </span>
             </div>
 
-            {/* Bottom controls */}
             <div className="px-3 pb-3 space-y-2">
-              {/* Progress bar */}
               <div className="relative w-full h-1.5 bg-white/20 rounded-full cursor-pointer group">
                 <div className="absolute left-0 top-0 h-full bg-white/25 rounded-full" style={{ width: `${duration ? (buffered / duration) * 100 : 0}%` }} />
                 <input
@@ -289,30 +282,24 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Play/pause */}
                 <button onClick={e => { e.stopPropagation(); const vid = videoRef.current; if (vid) vid.paused ? vid.play() : vid.pause(); }} className="text-white hover:text-cyan-400 transition-colors p-1">
                   {playing ? <Pause size={20} /> : <Play size={20} />}
                 </button>
-                {/* Skip */}
                 <button onClick={e => { e.stopPropagation(); const vid = videoRef.current; if (vid) vid.currentTime = Math.max(0, vid.currentTime - 10); }} className="text-white hover:text-cyan-400 p-1">
                   <SkipBack size={16} />
                 </button>
                 <button onClick={e => { e.stopPropagation(); const vid = videoRef.current; if (vid) vid.currentTime = Math.min(vid.duration, vid.currentTime + 10); }} className="text-white hover:text-cyan-400 p-1">
                   <SkipForward size={16} />
                 </button>
-                {/* Volume */}
                 <div className="flex items-center gap-1">
                   <button onClick={e => { e.stopPropagation(); const vid = videoRef.current; if (vid) { vid.muted = !vid.muted; setMuted(vid.muted); } }} className="text-white hover:text-cyan-400 p-1">
                     {muted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
                   </button>
                   <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume} onChange={e => { e.stopPropagation(); changeVolume(Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="w-16 h-1 accent-cyan-400 cursor-pointer" />
                 </div>
-                {/* Time */}
                 <span className="text-gray-300 text-xs ml-1 tabular-nums">{formatTime(currentTime)} / {formatTime(duration)}</span>
 
-                {/* Right side controls */}
                 <div className="ml-auto flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                  {/* Cast */}
                   <button
                     onClick={handleCastToTV}
                     title={castState === "casting" ? "Casting to TV" : "Cast to TV"}
@@ -321,7 +308,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                     <Tv size={15} />
                   </button>
 
-                  {/* Download */}
                   <button
                     onClick={handleDownload}
                     title="Download"
@@ -330,7 +316,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                     <Download size={15} />
                   </button>
 
-                  {/* Settings */}
                   <div className="relative">
                     <button
                       onClick={() => setShowSettings(s => !s)}
@@ -364,7 +349,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                                   {res === "720p" && <span className="ml-1.5 text-[10px] text-green-500">SD</span>}
                                   {res === "480p" && <span className="ml-1.5 text-[10px] text-yellow-500">Low</span>}
                                 </span>
-                                {resolution === res && <span className={`w-1.5 h-1.5 rounded-full`} style={{ background: resolution === res ? "currentColor" : "transparent" }} />}
+                                {resolution === res && <span className="w-1.5 h-1.5 rounded-full" style={{ background: resolution === res ? "currentColor" : "transparent" }} />}
                               </button>
                             ))}
                             <p className="text-[10px] text-gray-600 px-4 py-2 border-t border-white/5">Quality may vary by stream</p>
@@ -374,7 +359,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                     )}
                   </div>
 
-                  {/* Fullscreen */}
                   <button onClick={toggleFullscreen} className="text-white hover:text-cyan-400 p-1.5 rounded transition-colors" title={fullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}>
                     {fullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
                   </button>
@@ -385,7 +369,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
         )}
       </div>
 
-      {/* Cast to TV modal */}
       {showCastModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowCastModal(false)}>
           <div className="glass rounded-2xl border border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
