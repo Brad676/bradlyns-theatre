@@ -6,6 +6,39 @@ const router = Router();
 const BASE_URL = "https://movieapi.xcasper.space/api";
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+const CACHE_TTL = 5 * 60 * 1000;
+const cache = new Map<string, { data: unknown; expires: number }>();
+const inflight = new Map<string, Promise<unknown>>();
+const NO_CACHE_PREFIXES = ["bff/stream", "stream"];
+
+function shouldCache(path: string) {
+  return !NO_CACHE_PREFIXES.some(p => path === p || path.startsWith(p + "?") || path.startsWith(p + "/"));
+}
+
+async function cachedFetch(url: string, path: string): Promise<{ data: unknown; status: number }> {
+  const cacheable = shouldCache(path);
+  if (cacheable) {
+    const hit = cache.get(url);
+    if (hit && hit.expires > Date.now()) return { data: hit.data, status: 200 };
+    const existing = inflight.get(url);
+    if (existing) return { data: await existing, status: 200 };
+  }
+
+  const fetchPromise = fetch(url, {
+    headers: { "User-Agent": BROWSER_UA, "Referer": "https://movieapi.xcasper.space/", "Accept": "application/json" },
+    signal: AbortSignal.timeout(15000),
+  }).then(async r => {
+    const ct = r.headers.get("content-type") ?? "";
+    const data = ct.includes("application/json") ? await r.json() : await r.text();
+    if (cacheable && r.status === 200) cache.set(url, { data, expires: Date.now() + CACHE_TTL });
+    inflight.delete(url);
+    return { data, status: r.status };
+  }).catch(err => { inflight.delete(url); throw err; });
+
+  if (cacheable) inflight.set(url, fetchPromise.then(r => r.data));
+  return fetchPromise;
+}
+
 const ALLOWED_PATHS = [
   "trending",
   "hot",
@@ -43,23 +76,8 @@ router.get("/proxy/*splat", async (req, res): Promise<void> => {
   const url = `${BASE_URL}/${path}${query ? "?" + query : ""}`;
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": BROWSER_UA,
-        "Referer": "https://movieapi.xcasper.space/",
-        "Accept": "application/json",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("application/json")) {
-      const data = await response.json();
-      res.status(response.status).json(data);
-    } else {
-      const text = await response.text();
-      res.status(response.status).send(text);
-    }
+    const { data, status } = await cachedFetch(url, path);
+    res.status(status).json(data);
   } catch (err) {
     logger.error({ err, url }, "Proxy request failed");
     res.status(502).json({ error: "Upstream API unavailable" });
