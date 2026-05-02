@@ -49,29 +49,36 @@ export default function Watch() {
     if (!subjectId) return;
     setSubject(null);
     setEpisodeData(null);
+    setStreamUrl(null);
+    setError(null);
+    setLoading(true);
 
     externalFetch("detail", { subjectId })
       .then((d: unknown) => {
         const data = d as { data: { subject: Subject } };
         const s = data.data?.subject ?? null;
         setSubject(s);
-        if (s?.subjectType === 2) {
-          apiGet(`proxy/episodes/${subjectId}?title=${encodeURIComponent(s.title ?? "")}`)
+        const isSer = s?.subjectType === 2;
+        if (isSer) {
+          apiGet(`proxy/episodes/${subjectId}?title=${encodeURIComponent(s?.title ?? "")}`)
             .then(r => r.json())
             .then((ed: EpisodeData) => setEpisodeData(ed))
             .catch(() => {});
         }
-      }).catch(() => {});
-
-    resolveStream(subjectId, isSeries ? seasonParam : undefined, isSeries ? episodeParam : undefined);
+        resolveStream(subjectId, isSer ? seasonParam : undefined, isSer ? episodeParam : undefined);
+      }).catch(() => {
+        setError("Could not load title details.");
+        setLoading(false);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId]);
 
   useEffect(() => {
     setCurrentSeason(seasonParam);
     setCurrentEpisode(episodeParam);
-    if (subjectId && (seasonParam > 1 || episodeParam > 1)) {
-      resolveStream(subjectId, seasonParam, episodeParam);
+    if (subjectId && subject) {
+      const isSer = subject.subjectType === 2;
+      resolveStream(subjectId, isSer ? seasonParam : undefined, isSer ? episodeParam : undefined);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonParam, episodeParam]);
