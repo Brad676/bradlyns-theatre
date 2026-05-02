@@ -2,18 +2,17 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Search, User, Shuffle, Users, X, LogOut, Settings, List, Film } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { AuthModal } from "./AuthModal";
 import { externalFetch } from "@/lib/api";
 
 type Suggestion = { word: string };
 
 export function Navbar() {
   const { user, logout } = useAuth();
-  const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [, navigate] = useLocation();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -54,27 +53,48 @@ export function Navbar() {
             <span className="text-lg font-bold neon-text cursor-pointer whitespace-nowrap">🎭 Bradlyn's theatre</span>
           </Link>
 
-          <div className="flex-1 max-w-md relative">
-            <div className="flex items-center bg-white/5 border border-white/10 rounded-full px-3 py-1.5 gap-2">
-              <Search size={14} className="text-gray-400 flex-shrink-0" />
+          {/* Search Bar */}
+          <div className="flex-1 max-w-lg relative">
+            <div className={`flex items-center rounded-full px-4 py-2 gap-2 transition-all duration-200 ${
+              focused
+                ? "bg-white/10 border border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.15)]"
+                : "bg-white/5 border border-white/10 hover:border-white/20 hover:bg-white/8"
+            }`}>
+              <Search size={15} className={`flex-shrink-0 transition-colors duration-200 ${focused ? "text-cyan-400" : "text-gray-400"}`} />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={e => { setQuery(e.target.value); setShowSuggestions(true); }}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                onKeyDown={e => { if (e.key === "Enter" && query) doSearch(query); }}
+                onFocus={() => { setFocused(true); setShowSuggestions(true); }}
+                onBlur={() => { setFocused(false); setTimeout(() => setShowSuggestions(false), 150); }}
+                onKeyDown={e => { if (e.key === "Enter" && query.trim()) doSearch(query.trim()); }}
                 placeholder="Search movies, series..."
                 className="bg-transparent text-sm text-white placeholder-gray-500 outline-none flex-1 w-full"
               />
-              {query && <button onClick={() => setQuery("")}><X size={12} className="text-gray-400" /></button>}
+              {query && (
+                <button
+                  onClick={() => { setQuery(""); inputRef.current?.focus(); }}
+                  className="p-0.5 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
+
+            {/* Suggestions dropdown */}
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 glass rounded-lg border border-white/10 overflow-hidden z-50 max-h-60 overflow-y-auto">
-                {suggestions.slice(0, 8).map(s => (
-                  <button key={s.word} onClick={() => doSearch(s.word)} className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2">
-                    <Search size={12} className="text-gray-500" /> {s.word}
+              <div className="absolute top-full left-0 right-0 mt-2 glass rounded-xl border border-white/10 overflow-hidden z-50 shadow-xl">
+                {suggestions.slice(0, 8).map((s, i) => (
+                  <button
+                    key={s.word}
+                    onClick={() => doSearch(s.word)}
+                    className={`w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-3 transition-colors ${
+                      i !== 0 ? "border-t border-white/5" : ""
+                    }`}
+                  >
+                    <Search size={12} className="text-gray-500 flex-shrink-0" />
+                    <span>{s.word}</span>
                   </button>
                 ))}
               </div>
@@ -91,7 +111,7 @@ export function Navbar() {
               </button>
             </Link>
 
-            {user ? (
+            {user && (
               <div className="relative">
                 <button onClick={() => setShowUserMenu(m => !m)} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-full px-3 py-1.5 text-sm text-white">
                   <div className="w-6 h-6 rounded-full bg-cyan-500/30 flex items-center justify-center text-cyan-400 text-xs font-bold">
@@ -127,15 +147,10 @@ export function Navbar() {
                   </div>
                 )}
               </div>
-            ) : (
-              <button onClick={() => setShowAuth(true)} className="neon-btn px-4 py-1.5 rounded-full text-sm font-medium">
-                Sign In
-              </button>
             )}
           </div>
         </div>
       </nav>
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     </>
   );
 }
