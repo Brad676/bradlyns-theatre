@@ -22,8 +22,12 @@ export function Navbar() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const data = await externalFetch("search/suggest", { keyword: query }) as { data: { items: Suggestion[] } };
-        setSuggestions(data.data?.items ?? []);
+        const raw = await externalFetch("search/suggest", { keyword: query }) as { data: { items?: Suggestion[]; words?: Suggestion[]; keywordList?: string[] } };
+        const items: Suggestion[] =
+          raw.data?.items ??
+          raw.data?.words ??
+          (raw.data?.keywordList ?? []).map((w: string) => ({ word: w }));
+        setSuggestions(items ?? []);
       } catch { setSuggestions([]); }
     }, 300);
   }, [query]);

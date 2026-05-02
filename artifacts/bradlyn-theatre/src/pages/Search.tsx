@@ -32,8 +32,8 @@ export default function SearchPage() {
     if (!kw.trim()) { setResults([]); return; }
     setLoading(true);
     try {
-      const data = await searchSubjects(kw, pg, 24, 0) as { data: { items: Subject[]; pager: { hasMore: boolean } } };
-      const items = data.data?.items ?? [];
+      const data = await searchSubjects(kw, pg, 24) as { data: { items?: Subject[]; subjectList?: Subject[]; pager: { hasMore: boolean } } };
+      const items = data.data?.items ?? data.data?.subjectList ?? [];
       if (append) setResults(prev => [...prev, ...items]);
       else setResults(items);
       setHasMore(data.data?.pager?.hasMore ?? false);

@@ -32,12 +32,9 @@ export async function externalFetch(path: string, params: Record<string, string 
 }
 
 export async function searchSubjects(keyword: string, page = 1, perPage = 20, subjectType?: number): Promise<unknown> {
-  const params = new URLSearchParams({
-    keyword,
-    page: String(page),
-    perPage: String(perPage),
-    subjectType: String(subjectType ?? 0),
-  });
+  const obj: Record<string, string> = { keyword, page: String(page), perPage: String(perPage) };
+  if (subjectType !== undefined && subjectType !== 0) obj.subjectType = String(subjectType);
+  const params = new URLSearchParams(obj);
   const r = await fetch(`${EXTERNAL_API_BASE}/search?${params.toString()}`);
   if (!r.ok) throw new Error(`API error: ${r.status}`);
   return r.json();
