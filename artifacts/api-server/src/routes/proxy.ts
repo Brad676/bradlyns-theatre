@@ -87,7 +87,7 @@ router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
       });
       if (!r.ok) return null;
       const ct = r.headers.get("content-type") ?? "";
-      if (ct.includes("video") || ct.includes("octet-stream") || ct.includes("mpegurl") || ct.includes("x-mpegURL")) {
+      if (ct.includes("video") || ct.includes("octet-stream") || ct.includes("mpegurl") || ct.includes("x-mpegURL") || ct.includes("application/vnd.apple.mpegurl")) {
         return streamUrl;
       }
       const text = await r.text();
@@ -106,7 +106,7 @@ router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
   const fallback = await tryFetch(`https://cyber-stream-foxy-a5pz.vercel.app/movie/${subjectId}`);
   if (fallback) { res.json({ url: fallback }); return; }
 
-  res.json({ url: buildUrl(subjectId), direct: true });
+  res.status(502).json({ error: "stream unavailable" });
 });
 
 router.get("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
