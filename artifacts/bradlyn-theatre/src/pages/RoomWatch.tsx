@@ -37,7 +37,16 @@ export default function RoomWatch() {
         setRoom(data);
         setQueue(data.queue ?? []);
         if (data.currentSubjectId) {
-          setStreamUrl(`https://movieapi.xcasper.space/api/bff/stream?subjectId=${data.currentSubjectId}`);
+          const query = new URLSearchParams({ resolution: "720", lang: "En" });
+          if (data.currentSubjectType === 2) {
+            const season = data.queue?.[0]?.seriesSeason;
+            const episode = data.queue?.[0]?.seriesEpisode;
+            if (season && episode) {
+              query.set("se", String(season));
+              query.set("ep", String(episode));
+            }
+          }
+          setStreamUrl(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/proxy/stream/${data.currentSubjectId}?${query.toString()}`);
           setSyncTimestamp(data.currentTimestampSec ?? 0);
         }
       })
@@ -52,7 +61,7 @@ export default function RoomWatch() {
     s.emit("join-room", roomId);
     s.on("viewer-count", (count: number) => setViewerCount(count));
     s.on("host-play", ({ subjectId, subjectType, title, coverUrl, timestampSec }: { subjectId: string; subjectType: number; title: string; coverUrl: string; timestampSec?: number }) => {
-      const url = `https://movieapi.xcasper.space/api/bff/stream?subjectId=${subjectId}`;
+      const url = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/proxy/stream/${subjectId}?resolution=720&lang=En`;
       setStreamUrl(url);
       setSyncTimestamp(timestampSec ?? 0);
       setRoom(prev => prev ? { ...prev, state: "playing", currentSubjectId: subjectId, currentTitle: title, currentCoverUrl: coverUrl } : prev);
