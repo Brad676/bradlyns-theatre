@@ -32,42 +32,18 @@ export async function externalFetch(path: string, params: Record<string, string 
 }
 
 export async function directStreamFetch(subjectId: string): Promise<string | null> {
-  try {
-    const r = await fetch(`https://movieapi.xcasper.space/api/bff/stream?subjectId=${subjectId}`, {
-      headers: { "User-Agent": BROWSER_UA },
-    });
-    if (r.ok && r.headers.get("content-type")?.includes("video")) {
-      return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${subjectId}`;
-    }
-    const text = await r.text();
-    if (text.startsWith("http")) return text.trim();
-    const j = JSON.parse(text);
-    if (j.url) return j.url;
-    if (j.data?.url) return j.data.url;
-    return null;
-  } catch {
-    return null;
-  }
+  const r = await fetch(`${EXTERNAL_API_BASE}/stream/${subjectId}`);
+  if (!r.ok) return null;
+  const j = await r.json() as { url?: string };
+  return j.url ?? null;
 }
 
 export async function getStreamUrl(subjectId: string): Promise<string | null> {
-  const streamUrl = `https://movieapi.xcasper.space/api/bff/stream?subjectId=${subjectId}`;
-  try {
-    const r = await fetch(streamUrl, { method: "HEAD" });
-    if (r.ok) return streamUrl;
-  } catch {}
-  return streamUrl;
+  return `${EXTERNAL_API_BASE}/stream/${subjectId}`;
 }
 
 export async function getSeriesStreamUrl(seriesId: string): Promise<string | null> {
-  try {
-    const r = await fetch(`https://cyber-stream-foxy-a5pz.vercel.app/movie/${seriesId}`);
-    if (r.ok) {
-      const text = await r.text();
-      if (text.startsWith("http")) return text.trim();
-    }
-  } catch {}
-  return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${seriesId}`;
+  return `${EXTERNAL_API_BASE}/stream/${seriesId}`;
 }
 
 export async function apiPost(path: string, body: unknown): Promise<Response> {
