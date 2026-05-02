@@ -6,7 +6,9 @@ import { ToastDisplay } from "@/components/ToastDisplay";
 import { Navbar } from "@/components/Navbar";
 import { Sidebar } from "@/components/Sidebar";
 import { Footer } from "@/components/Footer";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { useAuth } from "@/context/AuthContext";
+import { useWelcomeVoice } from "@/hooks/useWelcomeVoice";
 
 const Home = lazy(() => import("@/pages/Home"));
 const Search = lazy(() => import("@/pages/Search"));
@@ -42,7 +44,7 @@ function WithLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Router() {
+function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={() => <WithLayout><Home /></WithLayout>} />
@@ -79,6 +81,8 @@ function Router() {
 function AppContent() {
   const { user, loading } = useAuth();
 
+  useWelcomeVoice(!!user && !loading);
+
   if (loading) return <PageLoader />;
 
   if (!user) {
@@ -91,7 +95,7 @@ function AppContent() {
 
   return (
     <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-      <Router />
+      <AppRouter />
     </WouterRouter>
   );
 }
@@ -104,6 +108,7 @@ export default function App() {
           <AppContent />
         </WouterRouter>
         <ToastDisplay />
+        <InstallPrompt />
       </AuthProvider>
     </ToastProvider>
   );
