@@ -55,6 +55,29 @@ export async function getSeriesStreamUrl(seriesId: string, season?: number, epis
   return getStreamUrl(seriesId, season, episode, resolution, lang);
 }
 
+export type MusicTrack = {
+  trackId: number;
+  trackName: string;
+  artistName: string;
+  artworkUrl100: string;
+  previewUrl?: string;
+  trackViewUrl?: string;
+  collectionName?: string;
+  releaseDate?: string;
+  primaryGenreName?: string;
+  trackTimeMillis?: number;
+  country?: string;
+  isStreamable?: boolean;
+};
+
+export async function fetchMusicTracks(term: string, country?: string, limit = 25): Promise<MusicTrack[]> {
+  const params = new URLSearchParams({ term, limit: String(limit), ...(country ? { country } : {}) });
+  const r = await fetch(`${API_BASE}/music/search?${params.toString()}`);
+  if (!r.ok) return [];
+  const data = await r.json() as { results?: MusicTrack[] };
+  return (data.results ?? []).filter(t => t.previewUrl);
+}
+
 export async function apiPost(path: string, body: unknown): Promise<Response> {
   return apiFetch(`${API_BASE}/${path}`, { method: "POST", body: JSON.stringify(body) });
 }
