@@ -37,16 +37,13 @@ export async function directStreamFetch(subjectId: string, season?: number, epis
     query.set("se", String(season));
     query.set("ep", String(episode));
   }
-  return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&${query.toString()}`;
+  return season && episode
+    ? `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&se=${encodeURIComponent(String(season))}&ep=${encodeURIComponent(String(episode))}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`
+    : `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`;
 }
 
 export async function getStreamUrl(subjectId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
-  const query = new URLSearchParams({ resolution, lang });
-  if (season && episode) {
-    query.set("se", String(season));
-    query.set("ep", String(episode));
-  }
-  return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&${query.toString()}`;
+  return directStreamFetch(subjectId, season, episode, resolution, lang);
 }
 
 export async function getSeriesStreamUrl(seriesId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
