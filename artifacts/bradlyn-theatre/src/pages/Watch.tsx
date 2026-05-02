@@ -22,6 +22,7 @@ export default function Watch() {
   const [subject, setSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resolution, setResolution] = useState<"480" | "720" | "1080">("720");
   const [episodeData, setEpisodeData] = useState<EpisodeData | null>(null);
   const [currentSeason, setCurrentSeason] = useState(seasonParam);
   const [currentEpisode, setCurrentEpisode] = useState(episodeParam);
@@ -29,13 +30,13 @@ export default function Watch() {
 
   const isSeries = subject?.subjectType === 2;
 
-  const resolveStream = async (id: string, season?: number, ep?: number) => {
+  const resolveStream = async (id: string, season?: number, ep?: number, res?: "480" | "720" | "1080") => {
     setLoading(true);
     setError(null);
     setStreamUrl(null);
 
     try {
-      const stream = await getStreamUrl(id, season, ep, "720", "En");
+      const stream = await getStreamUrl(id, season, ep, res ?? resolution, "En");
       if (!stream) throw new Error("no stream url");
       setStreamUrl(stream);
     } catch {
@@ -43,6 +44,13 @@ export default function Watch() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResolutionChange = (res: "480" | "720" | "1080") => {
+    setResolution(res);
+    if (!subjectId) return;
+    const isSer = subject?.subjectType === 2;
+    resolveStream(subjectId, isSer ? currentSeason : undefined, isSer ? currentEpisode : undefined, res);
   };
 
   useEffect(() => {
@@ -136,6 +144,8 @@ export default function Watch() {
               subjectType={subject?.subjectType ?? 1}
               title={displayTitle}
               coverUrl={subject?.cover?.url}
+              currentResolution={`${resolution}p` as "480p" | "720p" | "1080p"}
+              onResolutionChange={handleResolutionChange}
               onEnded={isSeries && hasNext ? () => goToEpisode(currentSeason, currentEpisode + 1) : undefined}
             />
           </div>

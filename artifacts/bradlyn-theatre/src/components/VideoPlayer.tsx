@@ -16,6 +16,8 @@ type Props = {
   title?: string;
   coverUrl?: string;
   onEnded?: () => void;
+  onResolutionChange?: (res: "480" | "720" | "1080") => void;
+  currentResolution?: Resolution;
 };
 
 function formatTime(s: number): string {
@@ -27,7 +29,7 @@ function formatTime(s: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEnded }: Props) {
+export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEnded, onResolutionChange, currentResolution }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -38,7 +40,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [fullscreen, setFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [speed, setSpeed] = useState(1);
-  const [resolution, setResolution] = useState<Resolution>("720p");
+  const [resolution, setResolution] = useState<Resolution>(currentResolution ?? "720p");
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"speed" | "quality">("speed");
   const [buffered, setBuffered] = useState(0);
@@ -174,7 +176,14 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const changeResolution = (res: Resolution) => {
     setResolution(res);
     setShowSettings(false);
+    const raw = res.replace("p", "") as "480" | "720" | "1080";
+    onResolutionChange?.(raw);
   };
+
+  useEffect(() => {
+    if (currentResolution && currentResolution !== resolution) setResolution(currentResolution);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentResolution]);
 
   const describeVideoError = () => {
     const vid = videoRef.current;
