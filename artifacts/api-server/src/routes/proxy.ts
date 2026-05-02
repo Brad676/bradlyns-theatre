@@ -22,6 +22,8 @@ const ALLOWED_PATHS = [
   "staff/works",
   "staff/related",
   "bff/stream",
+  "episodes",
+  "stream",
 ];
 
 function isAllowed(path: string): boolean {
