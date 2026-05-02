@@ -47,6 +47,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [showCastModal, setShowCastModal] = useState(false);
   const [downloadState, setDownloadState] = useState<"idle" | "downloading">("idle");
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const hideControlsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimestampRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { user } = useAuth();
@@ -56,6 +57,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     const vid = videoRef.current;
     if (!vid) return;
     setPlaybackError(null);
+    setFailedSrc(null);
     if (user && subjectId) {
       apiGet(`user/history`).then(r => r.json()).then((history: { subjectId: string; timestampSec: number; playbackSpeed: number }[]) => {
         const entry = history.find(h => h.subjectId === subjectId);
@@ -263,6 +265,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
           onError={() => {
             setVideoLoading(false);
             setPlaybackError(describeVideoError());
+            setFailedSrc(src);
           }}
           onEnded={savedOnEnd}
           playsInline
@@ -281,6 +284,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
             <div className="max-w-sm">
               <h3 className="text-white font-semibold text-lg mb-2">Playback error</h3>
               <p className="text-gray-300 text-sm">{playbackError}</p>
+              {failedSrc && <p className="text-gray-500 text-[11px] mt-2 break-all">{failedSrc}</p>}
             </div>
           </div>
         )}
