@@ -52,6 +52,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const saveTimestampRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { user } = useAuth();
   const tapRef = useRef<number>(0);
+  const srcRef = useRef(src);
 
   useEffect(() => {
     const vid = videoRef.current;
@@ -66,6 +67,28 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
       }).catch(() => {});
     }
   }, [user, subjectId]);
+
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (srcRef.current !== src) {
+      srcRef.current = src;
+      setPlaybackError(null);
+      setFailedSrc(null);
+      setVideoLoading(true);
+      setPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      vid.pause();
+      vid.removeAttribute("src");
+      vid.load();
+      requestAnimationFrame(() => {
+        if (!videoRef.current) return;
+        videoRef.current.src = src;
+        videoRef.current.load();
+      });
+    }
+  }, [src]);
 
   useEffect(() => {
     const vid = videoRef.current;
@@ -249,6 +272,15 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
           ref={videoRef}
           src={src}
           autoPlay
+          onLoadedMetadata={() => {
+            const vid = videoRef.current;
+            if (!vid) return;
+            setDuration(vid.duration || 0);
+            setVideoLoading(false);
+            if (vid.paused) {
+              vid.play().catch(() => {});
+            }
+          }}
           onClick={handleVideoClick}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
