@@ -35,9 +35,12 @@ export default function Watch() {
     setStreamUrl(null);
 
     try {
-      const stream = await getStreamUrl(id, season, ep, "720", "En");
-      if (!stream) throw new Error("no stream url");
-      setStreamUrl(stream);
+      const query = new URLSearchParams({ resolution: "720", lang: "En" });
+      if (season && ep) {
+        query.set("se", String(season));
+        query.set("ep", String(ep));
+      }
+      setStreamUrl(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/proxy/stream/${id}?${query.toString()}`);
     } catch {
       setError("This title is currently unavailable. The stream resolver failed.");
     } finally {
