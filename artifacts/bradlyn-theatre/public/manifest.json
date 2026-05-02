@@ -1,0 +1,43 @@
+{
+  "name": "Bradlyn's Theatre",
+  "short_name": "BT",
+  "description": "Your cinematic universe — movies, series, watch rooms and more.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0f1f",
+  "theme_color": "#00f3ff",
+  "categories": ["entertainment"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Browse Movies",
+      "short_name": "Movies",
+      "description": "Go to movies",
+      "url": "/browse?type=movie",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Browse Series",
+      "short_name": "Series",
+      "description": "Go to series",
+      "url": "/browse?type=tv",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
