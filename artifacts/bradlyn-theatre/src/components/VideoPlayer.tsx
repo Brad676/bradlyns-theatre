@@ -48,6 +48,8 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [castState, setCastState] = useState<"idle" | "connecting" | "casting">("idle");
   const [showCastModal, setShowCastModal] = useState(false);
   const [pipActive, setPipActive] = useState(false);
+  type CastStatus = { target: "airplay" | "cast" | "pip"; state: "searching" | "success" | "error" | "unsupported"; message: string };
+  const [castStatus, setCastStatus] = useState<CastStatus | null>(null);
   const [downloadState, setDownloadState] = useState<"idle" | "downloading">("idle");
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -245,65 +247,85 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     };
   }, []);
 
-  const tryRemotePlayback = async (): Promise<boolean> => {
-    const vid = videoRef.current as VideoWithExtras | null;
-    if (!vid?.remote) return false;
-    try {
-      setCastState("connecting");
-      await vid.remote.prompt();
-      return true;
-    } catch {
-      setCastState("idle");
-      return false;
-    }
-  };
-
   const tryAirPlay = async () => {
     const vid = videoRef.current as VideoWithExtras | null;
     if (!vid) return;
+    setCastStatus({ target: "airplay", state: "searching", message: "Opening AirPlay picker…" });
     // Safari's native AirPlay picker
     if (vid.webkitShowPlaybackTargetPicker) {
       vid.webkitShowPlaybackTargetPicker();
-      setShowCastModal(false);
+      setCastStatus({ target: "airplay", state: "success", message: "AirPlay picker opened — select your device." });
       return;
     }
-    // Remote Playback API (Safari also uses this for AirPlay)
-    const ok = await tryRemotePlayback();
-    if (ok) setShowCastModal(false);
+    // Remote Playback API (Safari/Chrome)
+    if (vid.remote) {
+      try {
+        setCastState("connecting");
+        await vid.remote.prompt();
+        setCastState("casting");
+        setCastStatus({ target: "airplay", state: "success", message: "AirPlay connected!" });
+        return;
+      } catch (err) {
+        setCastState("idle");
+        const msg = (err as Error)?.message ?? "";
+        if (msg.includes("No device") || msg.includes("no device")) {
+          setCastStatus({ target: "airplay", state: "error", message: "No AirPlay devices found on this network." });
+        } else {
+          setCastStatus({ target: "airplay", state: "unsupported", message: "AirPlay isn't available in this browser. Use Safari on iPhone, iPad, or Mac." });
+        }
+      }
+    } else {
+      setCastStatus({ target: "airplay", state: "unsupported", message: "AirPlay requires Safari on an Apple device. Open this page in Safari and try again." });
+    }
   };
 
   const tryChromecast = async () => {
-    const ok = await tryRemotePlayback();
-    if (ok) setShowCastModal(false);
+    const vid = videoRef.current as VideoWithExtras | null;
+    if (!vid) return;
+    setCastStatus({ target: "cast", state: "searching", message: "Looking for cast devices…" });
+    if (vid.remote) {
+      try {
+        setCastState("connecting");
+        await vid.remote.prompt();
+        setCastState("casting");
+        setCastStatus({ target: "cast", state: "success", message: "Connected to cast device!" });
+        return;
+      } catch (err) {
+        setCastState("idle");
+        const msg = (err as Error)?.message ?? "";
+        if (msg.includes("No device") || msg.includes("cancelled") || msg.includes("cancel")) {
+          setCastStatus({ target: "cast", state: "error", message: "No cast devices found, or selection was cancelled." });
+        } else {
+          setCastStatus({ target: "cast", state: "unsupported", message: "Chromecast requires Google Chrome. Open this page in Chrome and use the ⋮ menu → Cast." });
+        }
+      }
+    } else {
+      setCastStatus({ target: "cast", state: "unsupported", message: "Chromecast requires Google Chrome. Open in Chrome, then click ⋮ → Cast… to find your TV." });
+    }
   };
 
   const tryPiP = async () => {
     const vid = videoRef.current;
     if (!vid) return;
+    setCastStatus({ target: "pip", state: "searching", message: "Starting Picture-in-Picture…" });
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
+        setCastStatus({ target: "pip", state: "success", message: "Picture-in-Picture closed." });
       } else if (document.pictureInPictureEnabled) {
         await vid.requestPictureInPicture();
-        setShowCastModal(false);
+        setCastStatus({ target: "pip", state: "success", message: "Picture-in-Picture active! The video is now floating." });
+        setTimeout(() => setShowCastModal(false), 800);
+      } else {
+        setCastStatus({ target: "pip", state: "unsupported", message: "Picture-in-Picture isn't supported in this browser." });
       }
-    } catch { /* browser blocked it */ }
+    } catch {
+      setCastStatus({ target: "pip", state: "error", message: "Couldn't start Picture-in-Picture. Make sure a video is playing first." });
+    }
   };
 
-  const handleCastToTV = async () => {
-    const vid = videoRef.current as VideoWithExtras | null;
-    if (!vid) return;
-    // Try Remote Playback API first — covers Chromecast (Chrome) and AirPlay (Safari)
-    if (vid.remote) {
-      const ok = await tryRemotePlayback();
-      if (ok) return;
-    }
-    // Safari-specific AirPlay picker
-    if (vid.webkitShowPlaybackTargetPicker) {
-      vid.webkitShowPlaybackTargetPicker();
-      return;
-    }
-    // Fallback: show the cast options modal
+  const handleCastToTV = () => {
+    setCastStatus(null);
     setShowCastModal(true);
   };
 
@@ -500,77 +522,112 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
       </div>
 
       {showCastModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowCastModal(false)}>
-          <div className="glass rounded-2xl border border-white/10 p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => { setShowCastModal(false); setCastStatus(null); }}>
+          <div className="glass rounded-2xl border border-white/10 p-5 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
               <h3 className="text-white font-bold text-base flex items-center gap-2">
-                <Tv size={18} className="text-cyan-400" /> Cast to Your TV
+                <Tv size={17} className="text-cyan-400" /> Cast to Your TV
               </h3>
-              <button onClick={() => setShowCastModal(false)} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
-                <X size={16} />
+              <button onClick={() => { setShowCastModal(false); setCastStatus(null); }} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
+                <X size={15} />
               </button>
             </div>
-            <p className="text-gray-500 text-xs mb-4">Select an option to start casting the current video.</p>
+            <p className="text-gray-500 text-[11px] mb-3">Click an option — you'll see a result immediately.</p>
 
-            <div className="space-y-2">
-              {/* AirPlay — invokes webkitShowPlaybackTargetPicker or Remote Playback API */}
+            {/* Live status feedback banner */}
+            {castStatus && (
+              <div className={`mb-3 rounded-xl px-3 py-2.5 text-xs flex items-start gap-2 border ${
+                castStatus.state === "searching" ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-300" :
+                castStatus.state === "success"   ? "bg-green-500/10  border-green-500/20  text-green-300"  :
+                castStatus.state === "error"     ? "bg-red-500/10    border-red-500/20    text-red-300"    :
+                "bg-white/5 border-white/10 text-gray-400"
+              }`}>
+                {castStatus.state === "searching" && <span className="w-3 h-3 rounded-full border-2 border-yellow-400 border-t-transparent animate-spin flex-shrink-0 mt-0.5" />}
+                {castStatus.state === "success"   && <span className="text-green-400 flex-shrink-0">✓</span>}
+                {castStatus.state === "error"     && <span className="text-red-400 flex-shrink-0">✕</span>}
+                {castStatus.state === "unsupported" && <span className="text-gray-400 flex-shrink-0">ℹ</span>}
+                <span className="leading-relaxed">{castStatus.message}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              {/* AirPlay */}
               <button
                 onClick={tryAirPlay}
-                className="flex items-center gap-3 w-full bg-white/5 hover:bg-cyan-500/10 border border-white/5 hover:border-cyan-500/30 rounded-xl p-3.5 transition-all text-left group"
+                className={`flex items-center gap-3 w-full rounded-xl p-3 transition-all text-left group border ${
+                  castStatus?.target === "airplay" && castStatus.state === "success"
+                    ? "bg-cyan-500/20 border-cyan-500/40"
+                    : "bg-white/5 hover:bg-cyan-500/10 border-white/5 hover:border-cyan-500/30"
+                }`}
               >
-                <div className="w-9 h-9 rounded-lg bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                  <Airplay size={17} className="text-cyan-400" />
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                  {castStatus?.target === "airplay" && castStatus.state === "searching"
+                    ? <span className="w-4 h-4 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+                    : <Airplay size={15} className="text-cyan-400" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-semibold">AirPlay</p>
-                  <p className="text-gray-500 text-xs">iPhone · Mac · Apple TV</p>
+                  <p className="text-gray-500 text-[11px]">iPhone · iPad · Mac · Apple TV</p>
                 </div>
-                <ChevronRight size={14} className="text-gray-600 group-hover:text-cyan-400 transition-colors" />
+                <ChevronRight size={13} className="text-gray-600 group-hover:text-cyan-400 transition-colors flex-shrink-0" />
               </button>
 
-              {/* Chromecast — invokes Remote Playback API */}
+              {/* Chromecast */}
               <button
                 onClick={tryChromecast}
-                className="flex items-center gap-3 w-full bg-white/5 hover:bg-purple-500/10 border border-white/5 hover:border-purple-500/30 rounded-xl p-3.5 transition-all text-left group"
+                className={`flex items-center gap-3 w-full rounded-xl p-3 transition-all text-left group border ${
+                  castStatus?.target === "cast" && castStatus.state === "success"
+                    ? "bg-purple-500/20 border-purple-500/40"
+                    : "bg-white/5 hover:bg-purple-500/10 border-white/5 hover:border-purple-500/30"
+                }`}
               >
-                <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
-                  <Cast size={17} className="text-purple-400" />
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                  {castStatus?.target === "cast" && castStatus.state === "searching"
+                    ? <span className="w-4 h-4 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" />
+                    : <Cast size={15} className="text-purple-400" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-semibold">Chromecast</p>
-                  <p className="text-gray-500 text-xs">Android · Chrome · Smart TV</p>
+                  <p className="text-white text-sm font-semibold">Chromecast / Smart TV</p>
+                  <p className="text-gray-500 text-[11px]">Requires Google Chrome on desktop</p>
                 </div>
-                <ChevronRight size={14} className="text-gray-600 group-hover:text-purple-400 transition-colors" />
+                <ChevronRight size={13} className="text-gray-600 group-hover:text-purple-400 transition-colors flex-shrink-0" />
               </button>
 
-              {/* Picture-in-Picture — standard browser API */}
+              {/* Picture-in-Picture */}
               <button
                 onClick={tryPiP}
                 disabled={!document.pictureInPictureEnabled}
-                className="flex items-center gap-3 w-full bg-white/5 hover:bg-green-500/10 border border-white/5 hover:border-green-500/30 rounded-xl p-3.5 transition-all text-left group disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`flex items-center gap-3 w-full rounded-xl p-3 transition-all text-left group border disabled:opacity-40 disabled:cursor-not-allowed ${
+                  pipActive || (castStatus?.target === "pip" && castStatus.state === "success")
+                    ? "bg-green-500/20 border-green-500/40"
+                    : "bg-white/5 hover:bg-green-500/10 border-white/5 hover:border-green-500/30"
+                }`}
               >
-                <div className="w-9 h-9 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
-                  <PictureInPicture2 size={17} className={pipActive ? "text-green-300" : "text-green-400"} />
+                <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                  {castStatus?.target === "pip" && castStatus.state === "searching"
+                    ? <span className="w-4 h-4 rounded-full border-2 border-green-400 border-t-transparent animate-spin" />
+                    : <PictureInPicture2 size={15} className={pipActive ? "text-green-300" : "text-green-400"} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-semibold">
-                    Picture-in-Picture {pipActive && <span className="text-green-400 text-xs ml-1">● Active</span>}
+                    Picture-in-Picture
+                    {pipActive && <span className="ml-1.5 text-[10px] text-green-400 font-normal">● Active</span>}
                   </p>
-                  <p className="text-gray-500 text-xs">Float video in a small window while you browse</p>
+                  <p className="text-gray-500 text-[11px]">Float video in a window while you browse</p>
                 </div>
-                <ChevronRight size={14} className="text-gray-600 group-hover:text-green-400 transition-colors" />
+                <ChevronRight size={13} className="text-gray-600 group-hover:text-green-400 transition-colors flex-shrink-0" />
               </button>
 
-              {/* Screen Mirror — OS-level, instructional only */}
-              <div className="flex items-start gap-3 bg-white/3 rounded-xl p-3.5 border border-white/5 opacity-70">
-                <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                  <Wifi size={17} className="text-gray-400" />
+              {/* Screen Mirror — OS level */}
+              <div className="flex items-center gap-3 rounded-xl p-3 border border-white/5 opacity-50">
+                <div className="w-8 h-8 rounded-lg bg-white/8 flex items-center justify-center flex-shrink-0">
+                  <Wifi size={15} className="text-gray-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-gray-300 text-sm font-semibold">Screen Mirror</p>
-                  <p className="text-gray-600 text-xs leading-relaxed">Use your device's OS screen mirroring (Control Center on iOS, Quick Settings on Android).</p>
+                  <p className="text-gray-400 text-sm font-semibold">Screen Mirror</p>
+                  <p className="text-gray-600 text-[11px]">iOS Control Center · Android Quick Settings · Windows Connect</p>
                 </div>
-                <Monitor size={13} className="text-gray-600 mt-1 flex-shrink-0" />
+                <Monitor size={12} className="text-gray-600 flex-shrink-0" />
               </div>
             </div>
           </div>
