@@ -452,7 +452,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
           onEnded={savedOnEnd}
           playsInline
           className="w-full h-full"
-          style={{ background: "#000", outline: "none" }}
+          style={{ background: "#000", outline: "none", objectFit: "cover" }}
         />
 
         {videoLoading && (
