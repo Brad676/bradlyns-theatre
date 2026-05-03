@@ -1,9 +1,8 @@
 {
   "version": 2,
-  "comment": "Frontend-only deployment on Vercel. Deploy the API separately on Render or Railway.",
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm run build:frontend",
-  "outputDirectory": "artifacts/bradlyn-theatre/dist/public",
   "installCommand": "npm install -g pnpm && pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run build:frontend",
+  "outputDirectory": "artifacts/bradlyn-theatre/dist/public",
   "framework": null,
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
