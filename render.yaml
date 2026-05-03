@@ -1,0 +1,25 @@
+services:
+  # ── Full-stack Web Service (API + serves built frontend) ──────────────────
+  - type: web
+    name: bradlyns-theatre
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile && pnpm run build:prod
+    startCommand: pnpm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        sync: false          # Set this in the Render dashboard
+      - key: JWT_SECRET
+        generateValue: true  # Render auto-generates a secure random value
+
+databases:
+  # ── Managed PostgreSQL ────────────────────────────────────────────────────
+  - name: bradlyns-theatre-db
+    plan: free
+    databaseName: bradlyns_theatre
+    user: bradlyns_theatre

@@ -1,5 +1,12 @@
-const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
-const EXTERNAL_API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "") + "/api/proxy";
+// VITE_API_BASE_URL can be set to an external URL (e.g. https://your-api.onrender.com)
+// when the frontend and backend are deployed on different services.
+// If unset, the API is served from the same origin under /api.
+const API_BASE = import.meta.env.VITE_API_BASE_URL
+  ? import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "")
+  : import.meta.env.BASE_URL.replace(/\/$/, "") + "/api";
+const EXTERNAL_API_BASE = import.meta.env.VITE_API_BASE_URL
+  ? import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "") + "/proxy"
+  : import.meta.env.BASE_URL.replace(/\/$/, "") + "/api/proxy";
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 let authToken: string | null = localStorage.getItem("bt_token");
