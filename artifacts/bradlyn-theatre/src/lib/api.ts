@@ -123,6 +123,15 @@ export type MusicTrack = {
   isStreamable?: boolean;
 };
 
+export async function fetchYouTubeId(trackName: string, artistName: string): Promise<{ videoId: string; title: string; author: string } | null> {
+  const q = `${trackName} ${artistName} official audio`;
+  try {
+    const r = await fetch(`${API_BASE}/music/youtube?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    return r.json();
+  } catch { return null; }
+}
+
 export async function fetchMusicTracks(term: string, country?: string, limit = 25): Promise<MusicTrack[]> {
   const params = new URLSearchParams({ term, limit: String(limit), ...(country ? { country } : {}) });
   const r = await fetch(`${API_BASE}/music/search?${params.toString()}`, { cache: "no-store" });
