@@ -48,7 +48,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [castState, setCastState] = useState<"idle" | "connecting" | "casting">("idle");
   const [showCastModal, setShowCastModal] = useState(false);
   const [pipActive, setPipActive] = useState(false);
-  type CastStatus = { target: "airplay" | "cast" | "pip"; state: "searching" | "success" | "error" | "unsupported"; message: string };
+  type CastStatus = { target: "airplay" | "cast" | "pip" | "mirror"; state: "searching" | "success" | "error" | "unsupported"; message: string };
   const [castStatus, setCastStatus] = useState<CastStatus | null>(null);
   const [downloadState, setDownloadState] = useState<"idle" | "downloading">("idle");
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -321,6 +321,40 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
       }
     } catch {
       setCastStatus({ target: "pip", state: "error", message: "Couldn't start Picture-in-Picture. Make sure a video is playing first." });
+    }
+  };
+
+  const tryScreenMirror = async () => {
+    setCastStatus({ target: "mirror", state: "searching", message: "Opening display picker…" });
+    // Presentation API — Chrome can mirror/present to Chromecast displays & secondary screens
+    if ("PresentationRequest" in window) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const PR = (window as any).PresentationRequest as new (urls: string[]) => { start: () => Promise<{ addEventListener: (e: string, cb: () => void) => void }> };
+        const request = new PR([window.location.href]);
+        const connection = await request.start();
+        connection.addEventListener("close", () =>
+          setCastStatus({ target: "mirror", state: "error", message: "Screen mirror disconnected." })
+        );
+        setCastStatus({ target: "mirror", state: "success", message: "Screen mirroring started on external display!" });
+        setTimeout(() => setShowCastModal(false), 900);
+        return;
+      } catch (err) {
+        const msg = (err as Error)?.message ?? "";
+        if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("user")) {
+          setCastStatus({ target: "mirror", state: "error", message: "Display selection cancelled." });
+        } else {
+          setCastStatus({
+            target: "mirror", state: "unsupported",
+            message: "No compatible display found. Use your OS: iOS → Control Center → Screen Mirroring · Android → Quick Settings → Cast · Windows → Win+K (Connect).",
+          });
+        }
+      }
+    } else {
+      setCastStatus({
+        target: "mirror", state: "unsupported",
+        message: "Use your device OS: iOS → Control Center → Screen Mirroring · Android → Quick Settings → Cast · Windows → Win+K (Connect).",
+      });
     }
   };
 
@@ -618,17 +652,26 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
                 <ChevronRight size={13} className="text-gray-600 group-hover:text-green-400 transition-colors flex-shrink-0" />
               </button>
 
-              {/* Screen Mirror — OS level */}
-              <div className="flex items-center gap-3 rounded-xl p-3 border border-white/5 opacity-50">
-                <div className="w-8 h-8 rounded-lg bg-white/8 flex items-center justify-center flex-shrink-0">
-                  <Wifi size={15} className="text-gray-400" />
+              {/* Screen Mirror — Presentation API + OS fallback */}
+              <button
+                onClick={tryScreenMirror}
+                className={`flex items-center gap-3 w-full rounded-xl p-3 transition-all text-left group border ${
+                  castStatus?.target === "mirror" && castStatus.state === "success"
+                    ? "bg-orange-500/20 border-orange-500/40"
+                    : "bg-white/5 hover:bg-orange-500/10 border-white/5 hover:border-orange-500/30"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                  {castStatus?.target === "mirror" && castStatus.state === "searching"
+                    ? <span className="w-4 h-4 rounded-full border-2 border-orange-400 border-t-transparent animate-spin" />
+                    : <Monitor size={15} className="text-orange-400" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-gray-400 text-sm font-semibold">Screen Mirror</p>
-                  <p className="text-gray-600 text-[11px]">iOS Control Center · Android Quick Settings · Windows Connect</p>
+                  <p className="text-white text-sm font-semibold">Screen Mirror</p>
+                  <p className="text-gray-500 text-[11px]">iOS · Android · Windows · Secondary display</p>
                 </div>
-                <Monitor size={12} className="text-gray-600 flex-shrink-0" />
-              </div>
+                <ChevronRight size={13} className="text-gray-600 group-hover:text-orange-400 transition-colors flex-shrink-0" />
+              </button>
             </div>
           </div>
         </div>
