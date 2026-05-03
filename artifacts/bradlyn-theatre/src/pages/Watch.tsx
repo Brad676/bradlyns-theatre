@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useRoute, Link, useLocation } from "wouter";
+import { useRoute, Link, useLocation, useSearch } from "wouter";
 import {
   ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight,
   Tv, Loader2, List, X, Play, Clock,
@@ -14,10 +14,11 @@ type EpisodeData = { seasons: Season[] };
 
 export default function Watch() {
   const [, params]   = useRoute("/watch/:id");
-  const [location]   = useLocation();
+  const [, navigate] = useLocation();
+  const search       = useSearch();
   const subjectId    = params?.id ?? "";
 
-  const searchParams  = new URLSearchParams(location.split("?")[1] ?? "");
+  const searchParams  = new URLSearchParams(search);
   const seasonParam   = parseInt(searchParams.get("season")  ?? "1", 10) || 1;
   const episodeParam  = parseInt(searchParams.get("episode") ?? "1", 10) || 1;
 
@@ -31,7 +32,6 @@ export default function Watch() {
   const [currentEpisode, setCurrentEpisode] = useState(episodeParam);
   const [panelOpen, setPanelOpen]           = useState(false);
   const [panelSeason, setPanelSeason]       = useState(seasonParam);
-  const [, navigate] = useLocation();
   const activeEpRef  = useRef<HTMLButtonElement | null>(null);
 
   const isSeries = subject?.subjectType === 2;

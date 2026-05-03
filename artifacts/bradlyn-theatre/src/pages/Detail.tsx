@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useRoute, Link, useLocation } from "wouter";
+import { useRoute, Link, useLocation, useSearch } from "wouter";
 import {
   Play, Plus, Check, Twitter, Facebook, ExternalLink,
   Star, Clock, Calendar, Globe, Tv, Loader2,
@@ -16,11 +16,11 @@ type EpisodeData = { seasons: Season[] };
 
 export default function Detail() {
   const [, params] = useRoute("/detail/:id");
-  const [location] = useLocation();
+  const search     = useSearch();
   const subjectId  = params?.id ?? "";
 
   // Active season/episode from URL — set when user returns from the Watch page
-  const urlParams     = new URLSearchParams(location.split("?")[1] ?? "");
+  const urlParams     = new URLSearchParams(search);
   const activeSeason  = parseInt(urlParams.get("season")  ?? "0", 10) || 0;
   const activeEpisode = parseInt(urlParams.get("episode") ?? "0", 10) || 0;
 
