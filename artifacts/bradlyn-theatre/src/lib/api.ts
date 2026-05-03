@@ -130,6 +130,7 @@ export type MusicStreamResult = {
   downloadVideoUrl: string;
   downloadAudioUrl: string;
   audioUrl: string;
+  watchUrl?: string;
 };
 
 export async function fetchMusicStream(trackName: string, artistName: string): Promise<MusicStreamResult | null> {
