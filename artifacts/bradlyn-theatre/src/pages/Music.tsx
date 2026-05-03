@@ -1,19 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Music2, MapPin, Globe, TrendingUp, Play, Pause,
-  SkipBack, SkipForward, Volume2, VolumeX, X, ExternalLink, ChevronRight, Search,
+  SkipBack, SkipForward, X, ChevronRight, Search,
+  Download, Loader2, AlertCircle,
 } from "lucide-react";
-import { type MusicTrack, fetchMusicTracks, fetchMusicStream } from "@/lib/api";
+import { type MusicTrack, type MusicStreamResult, fetchMusicTracks, fetchMusicStream } from "@/lib/api";
 
 function artworkUrl(url: string, size = 300) {
   return url.replace(/\d+x\d+bb/, `${size}x${size}bb`);
-}
-
-function formatTime(s: number): string {
-  if (!isFinite(s) || s < 0) return "0:00";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
 function uniqTracks(arr: MusicTrack[]): MusicTrack[] {
@@ -29,7 +23,6 @@ type Region = {
   icon: React.ElementType;
   gradient: string;
   iconColor: string;
-  tagColor: string;
   description: string;
   queries: { term: string; country?: string }[];
 };
@@ -41,7 +34,6 @@ const REGIONS: Region[] = [
     icon: MapPin,
     gradient: "from-orange-500/30 to-yellow-500/30",
     iconColor: "text-orange-400",
-    tagColor: "bg-orange-500/20 text-orange-300",
     description: "Afrobeats · Afropop · Highlife · Bongo Flava",
     queries: [
       { term: "afrobeats", country: "NG" },
@@ -57,7 +49,6 @@ const REGIONS: Region[] = [
     icon: Globe,
     gradient: "from-blue-500/30 to-indigo-500/30",
     iconColor: "text-blue-400",
-    tagColor: "bg-blue-500/20 text-blue-300",
     description: "UK Pop · French Chanson · German Schlager · Eurodance",
     queries: [
       { term: "uk pop", country: "GB" },
@@ -73,7 +64,6 @@ const REGIONS: Region[] = [
     icon: Globe,
     gradient: "from-pink-500/30 to-rose-500/30",
     iconColor: "text-pink-400",
-    tagColor: "bg-pink-500/20 text-pink-300",
     description: "K-Pop · Bollywood · J-Pop · C-Pop",
     queries: [
       { term: "kpop", country: "KR" },
@@ -89,7 +79,6 @@ const REGIONS: Region[] = [
     icon: Globe,
     gradient: "from-teal-500/30 to-cyan-500/30",
     iconColor: "text-teal-400",
-    tagColor: "bg-teal-500/20 text-teal-300",
     description: "Australian Pop · Indie · New Zealand Music",
     queries: [
       { term: "australian pop", country: "AU" },
@@ -103,7 +92,6 @@ const REGIONS: Region[] = [
     icon: Globe,
     gradient: "from-purple-500/30 to-violet-500/30",
     iconColor: "text-purple-400",
-    tagColor: "bg-purple-500/20 text-purple-300",
     description: "Hip-Hop · R&B · Latin · Reggae · Samba",
     queries: [
       { term: "hip hop", country: "US" },
@@ -119,7 +107,6 @@ const REGIONS: Region[] = [
     icon: TrendingUp,
     gradient: "from-cyan-500/30 to-purple-500/30",
     iconColor: "text-cyan-400",
-    tagColor: "bg-cyan-500/20 text-cyan-300",
     description: "Global Hits · Top 40 · World Music",
     queries: [
       { term: "top 40 hits" },
@@ -150,11 +137,10 @@ type PlayerState = {
 };
 
 function MusicCard({
-  track, isActive, isPlaying, onPlay,
+  track, isActive, onPlay,
 }: {
   track: MusicTrack;
   isActive: boolean;
-  isPlaying: boolean;
   onPlay: () => void;
 }) {
   const art = artworkUrl(track.artworkUrl100, 300);
@@ -169,14 +155,14 @@ function MusicCard({
         />
         <div className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${isActive ? "bg-black/30" : "bg-black/0 group-hover:bg-black/40"}`}>
           <div className={`w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg transition-all duration-200 ${isActive ? "opacity-100 scale-100" : "opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100"}`}>
-            {isActive && isPlaying ? (
+            {isActive ? (
               <Pause size={16} className="text-gray-900" />
             ) : (
               <Play size={16} className="text-gray-900 ml-0.5" />
             )}
           </div>
         </div>
-        {isActive && isPlaying && (
+        {isActive && (
           <div className="absolute bottom-2 left-2">
             <PlayingBars />
           </div>
@@ -198,108 +184,146 @@ function SkeletonCard() {
   );
 }
 
-function MiniPlayer({
-  state, isPlaying, currentTime, duration, volume, muted,
-  onPlayPause, onSeek, onClose, onPrev, onNext, onVolume, onMute,
+function VideoModal({
+  state,
+  streamInfo,
+  streamLoading,
+  onClose,
+  onPrev,
+  onNext,
 }: {
   state: PlayerState;
-  isPlaying: boolean;
-  currentTime: number;
-  duration: number;
-  volume: number;
-  muted: boolean;
-  onPlayPause: () => void;
-  onSeek: (t: number) => void;
+  streamInfo: MusicStreamResult | null;
+  streamLoading: boolean;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
-  onVolume: (v: number) => void;
-  onMute: () => void;
 }) {
   const { track } = state;
-  const art = artworkUrl(track.artworkUrl100, 80);
-  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const art = artworkUrl(track.artworkUrl100, 120);
+  const hasPrev = state.index > 0;
+  const hasNext = state.index < state.playlist.length - 1;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") onPrev();
+      if (e.key === "ArrowRight") onNext();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, onPrev, onNext]);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-white/10 shadow-2xl">
-      <div
-        className="h-0.5 bg-white/10 cursor-pointer"
-        onClick={e => {
-          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-          onSeek(((e.clientX - rect.left) / rect.width) * (duration || 30));
-        }}
-      >
-        <div className="h-full bg-purple-500 transition-all" style={{ width: `${pct}%` }} />
+    <div className="fixed inset-0 z-50 flex flex-col bg-black">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 border-b border-white/10">
+        <div className="flex items-center gap-3 min-w-0">
+          <img src={art} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-white text-sm font-semibold truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+              {track.trackName}
+            </p>
+            <p className="text-gray-400 text-xs truncate">{track.artistName}</p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 p-2 ml-3 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+          title="Close (Esc)"
+        >
+          <X size={20} />
+        </button>
       </div>
 
-      <div className="flex items-center gap-3 px-4 py-2.5 max-w-5xl mx-auto">
-        <img src={art} alt={track.trackName} className="w-11 h-11 rounded-lg object-cover flex-shrink-0 shadow" />
+      {/* Video area — fills all available vertical space */}
+      <div className="flex-1 relative bg-black min-h-0 flex items-center justify-center">
+        {streamLoading ? (
+          <div className="flex flex-col items-center gap-4 text-center px-6">
+            <Loader2 size={36} className="text-purple-400 animate-spin" />
+            <p className="text-gray-400 text-sm">Finding music video…</p>
+            <p className="text-gray-600 text-xs truncate max-w-xs">{track.trackName} — {track.artistName}</p>
+          </div>
+        ) : streamInfo?.embedUrl ? (
+          <iframe
+            key={streamInfo.videoId}
+            src={streamInfo.embedUrl}
+            title={track.trackName}
+            className="w-full h-full"
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allowFullScreen
+            style={{ border: "none" }}
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-4 text-center px-6">
+            <AlertCircle size={36} className="text-red-400" />
+            <p className="text-gray-300 text-sm font-medium">Could not load video</p>
+            <p className="text-gray-500 text-xs">{track.trackName} — {track.artistName}</p>
+          </div>
+        )}
+      </div>
 
-        <div className="flex-1 min-w-0">
-          <p className="text-white text-xs font-semibold truncate">{track.trackName}</p>
-          <p className="text-gray-400 text-xs truncate">{track.artistName}</p>
-          <p className="text-gray-600 text-[10px] truncate">{track.collectionName}</p>
-        </div>
-
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={onPrev} className="p-1.5 text-gray-400 hover:text-white transition-colors" title="Previous">
-            <SkipBack size={16} />
+      {/* Bottom bar */}
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 border-t border-white/10 gap-3">
+        {/* Prev / Next */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onPrev}
+            disabled={!hasPrev}
+            title="Previous (←)"
+            className="p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed rounded-lg hover:bg-white/10"
+          >
+            <SkipBack size={18} />
           </button>
           <button
-            onClick={onPlayPause}
-            className="w-9 h-9 rounded-full bg-purple-500 hover:bg-purple-400 flex items-center justify-center transition-colors flex-shrink-0"
+            onClick={onNext}
+            disabled={!hasNext}
+            title="Next (→)"
+            className="p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed rounded-lg hover:bg-white/10"
           >
-            {isPlaying ? <Pause size={15} className="text-white" /> : <Play size={15} className="text-white ml-0.5" />}
-          </button>
-          <button onClick={onNext} className="p-1.5 text-gray-400 hover:text-white transition-colors" title="Next">
-            <SkipForward size={16} />
+            <SkipForward size={18} />
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-gray-500 text-[10px] tabular-nums w-8 text-right">{formatTime(currentTime)}</span>
-          <span className="text-gray-600 text-[10px]">/</span>
-          <span className="text-gray-500 text-[10px] tabular-nums w-8">{formatTime(duration || 30)}</span>
-        </div>
-
-        <div className="hidden md:flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={onMute} className="p-1 text-gray-400 hover:text-white transition-colors">
-            {muted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          </button>
-          <input
-            type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume}
-            onChange={e => onVolume(Number(e.target.value))}
-            className="w-16 h-1 accent-purple-500 cursor-pointer"
-          />
-        </div>
-
-        {track.trackViewUrl && (
-          <a
-            href={track.trackViewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 text-gray-500 hover:text-white transition-colors flex-shrink-0"
-            title="Open in Apple Music"
-          >
-            <ExternalLink size={13} />
-          </a>
+        {/* Download links — powered by Invidious, no login required */}
+        {streamInfo ? (
+          <div className="flex items-center gap-2">
+            <a
+              href={streamInfo.downloadAudioUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium hover:bg-purple-500/30 transition-colors"
+              title="Download audio (m4a)"
+            >
+              <Download size={13} /> Audio
+            </a>
+            <a
+              href={streamInfo.downloadVideoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-medium hover:bg-cyan-500/30 transition-colors"
+              title="Download video (720p)"
+            >
+              <Download size={13} /> Video
+            </a>
+          </div>
+        ) : (
+          <div />
         )}
-
-        <button onClick={onClose} className="p-1.5 text-gray-500 hover:text-white transition-colors flex-shrink-0">
-          <X size={15} />
-        </button>
       </div>
     </div>
   );
 }
 
 function RegionSection({
-  region, autoLoad, playerState, isPlaying, onPlay,
+  region,
+  autoLoad,
+  activeTrackId,
+  onPlay,
 }: {
   region: Region;
   autoLoad: boolean;
-  playerState: PlayerState | null;
-  isPlaying: boolean;
+  activeTrackId: number | null;
   onPlay: (track: MusicTrack, playlist: MusicTrack[], index: number) => void;
 }) {
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
@@ -370,8 +394,7 @@ function RegionSection({
             <MusicCard
               key={t.trackId}
               track={t}
-              isActive={playerState?.track.trackId === t.trackId}
-              isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
+              isActive={activeTrackId === t.trackId}
               onPlay={() => onPlay(t, tracks, i)}
             />
           ))}
@@ -382,8 +405,7 @@ function RegionSection({
             <MusicCard
               key={t.trackId}
               track={t}
-              isActive={playerState?.track.trackId === t.trackId}
-              isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
+              isActive={activeTrackId === t.trackId}
               onPlay={() => onPlay(t, tracks, i)}
             />
           ))}
@@ -399,13 +421,10 @@ export default function Music() {
   const [searchResults, setSearchResults] = useState<MusicTrack[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(30);
-  const [volume, setVolume] = useState(0.8);
-  const [muted, setMuted] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [streamInfo, setStreamInfo] = useState<MusicStreamResult | null>(null);
+  const [streamLoading, setStreamLoading] = useState(false);
   const currentTrackIdRef = useRef<number | null>(null);
 
   const runMusicSearch = useCallback((q: string) => {
@@ -425,117 +444,51 @@ export default function Music() {
   };
 
   const loadTrack = useCallback((track: MusicTrack, playlist: MusicTrack[], index: number) => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    // If same track is clicked again, close the modal (toggle off)
     if (playerState?.track.trackId === track.trackId) {
-      audio.paused ? audio.play().catch(() => {}) : audio.pause();
+      setPlayerState(null);
+      setStreamInfo(null);
+      setStreamLoading(false);
+      currentTrackIdRef.current = null;
       return;
     }
-    // Start with iTunes preview for instant audio feedback
+
     currentTrackIdRef.current = track.trackId;
-    audio.src = track.previewUrl ?? "";
-    audio.volume = muted ? 0 : volume;
-    audio.play().catch(() => {});
     setPlayerState({ track, playlist, index });
-    setIsPlaying(true);
-    setCurrentTime(0);
+    setStreamInfo(null);
+    setStreamLoading(true);
 
-    // Fetch full-length audio stream in background and swap seamlessly
-    fetchMusicStream(track.trackName, track.artistName).then(result => {
-      if (!result?.audioUrl) return;
-      if (currentTrackIdRef.current !== track.trackId) return; // user already changed song
-      audio.src = result.audioUrl;
-      audio.volume = muted ? 0 : volume;
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    }).catch(() => {});
-  }, [playerState, volume, muted]);
-
-  useEffect(() => {
-    const audio = new Audio();
-    audio.volume = volume;
-    audioRef.current = audio;
-    const onTime = () => setCurrentTime(audio.currentTime);
-    const onDuration = () => setDuration(isFinite(audio.duration) ? audio.duration : 30);
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    const onEnded = () => {
-      setPlayerState(prev => {
-        if (!prev) return null;
-        const next = prev.index + 1;
-        if (next < prev.playlist.length) {
-          const nextTrack = prev.playlist[next];
-          audio.src = nextTrack.previewUrl ?? "";
-          audio.play().catch(() => {});
-          return { track: nextTrack, playlist: prev.playlist, index: next };
-        }
-        return prev;
+    fetchMusicStream(track.trackName, track.artistName)
+      .then(result => {
+        if (currentTrackIdRef.current !== track.trackId) return;
+        setStreamInfo(result);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (currentTrackIdRef.current === track.trackId) setStreamLoading(false);
       });
-      setCurrentTime(0);
-    };
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("durationchange", onDuration);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", onEnded);
-    return () => {
-      audio.pause();
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("durationchange", onDuration);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("ended", onEnded);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerState]);
+
+  const handleClose = useCallback(() => {
+    setPlayerState(null);
+    setStreamInfo(null);
+    setStreamLoading(false);
+    currentTrackIdRef.current = null;
   }, []);
 
-  const handlePlayPause = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.paused ? audio.play().catch(() => {}) : audio.pause();
-  };
-
-  const handleSeek = (t: number) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = t;
-    setCurrentTime(t);
-  };
-
-  const handleVolume = (v: number) => {
-    const audio = audioRef.current;
-    if (audio) audio.volume = v;
-    setVolume(v);
-    setMuted(v === 0);
-  };
-
-  const handleMute = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const next = !muted;
-    audio.volume = next ? 0 : volume;
-    setMuted(next);
-  };
-
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     if (!playerState || playerState.index === 0) return;
-    const prev = playerState.index - 1;
-    loadTrack(playerState.playlist[prev], playerState.playlist, prev);
-  };
+    const i = playerState.index - 1;
+    loadTrack(playerState.playlist[i], playerState.playlist, i);
+  }, [playerState, loadTrack]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (!playerState) return;
-    const next = playerState.index + 1;
-    if (next < playerState.playlist.length) {
-      loadTrack(playerState.playlist[next], playerState.playlist, next);
-    }
-  };
+    const i = playerState.index + 1;
+    if (i < playerState.playlist.length) loadTrack(playerState.playlist[i], playerState.playlist, i);
+  }, [playerState, loadTrack]);
 
-  const handleClose = () => {
-    audioRef.current?.pause();
-    setPlayerState(null);
-    setIsPlaying(false);
-  };
+  const activeTrackId = playerState?.track.trackId ?? null;
 
   return (
     <>
@@ -546,7 +499,7 @@ export default function Music() {
         }
       `}</style>
 
-      <div className={`pt-20 pb-${playerState ? "24" : "12"}`}>
+      <div className="pt-20 pb-12">
         <div className="px-4 mb-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500/40 to-pink-500/40 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
@@ -554,10 +507,10 @@ export default function Music() {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold text-white">Music</h1>
-              <p className="text-gray-400 text-sm">Full songs · Africa · Europe · Asia · Americas · Worldwide</p>
+              <p className="text-gray-400 text-sm">Full music videos · Africa · Europe · Asia · Americas · Worldwide</p>
             </div>
-            {playerState && isPlaying && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
+            {playerState && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0 cursor-pointer" onClick={() => setPlayerState(s => s)}>
                 <PlayingBars />
                 <span className="text-purple-300 text-xs font-medium truncate max-w-[120px]">{playerState.track.trackName}</span>
               </div>
@@ -599,8 +552,7 @@ export default function Music() {
                     <MusicCard
                       key={t.trackId}
                       track={t}
-                      isActive={playerState?.track.trackId === t.trackId}
-                      isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
+                      isActive={activeTrackId === t.trackId}
                       onPlay={() => loadTrack(t, searchResults, i)}
                     />
                   ))}
@@ -640,8 +592,7 @@ export default function Music() {
                   key={region.id}
                   region={region}
                   autoLoad={region.id === activeTab}
-                  playerState={playerState}
-                  isPlaying={isPlaying}
+                  activeTrackId={activeTrackId}
                   onPlay={loadTrack}
                 />
               ))}
@@ -650,21 +601,15 @@ export default function Music() {
         )}
       </div>
 
+      {/* Full-screen YouTube video modal */}
       {playerState && (
-        <MiniPlayer
+        <VideoModal
           state={playerState}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          duration={duration}
-          volume={volume}
-          muted={muted}
-          onPlayPause={handlePlayPause}
-          onSeek={handleSeek}
+          streamInfo={streamInfo}
+          streamLoading={streamLoading}
           onClose={handleClose}
           onPrev={handlePrev}
           onNext={handleNext}
-          onVolume={handleVolume}
-          onMute={handleMute}
         />
       )}
     </>

@@ -57,50 +57,58 @@ router.get("/music/search", async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * Music video stream resolver.
+ * Searches Invidious for the best matching music video, then returns:
+ *   - embedUrl  : YouTube native embed URL  (plays full video in an iframe, free)
+ *   - downloadVideoUrl : Invidious 720p video download
+ *   - downloadAudioUrl : Invidious m4a audio download
+ * No YouTube Data API key is needed.
+ */
 router.get("/music/stream", async (req, res): Promise<void> => {
   const { q } = req.query as Record<string, string>;
   if (!q) { res.status(400).json({ error: "q required" }); return; }
 
-  const cacheKey = `stream:${q}`;
+  const cacheKey = `yt:${q}`;
   const hit = cache.get(cacheKey);
   if (hit && hit.expires > Date.now()) { res.json(hit.data); return; }
 
   type InvidiousResult = { videoId: string; title: string; author: string; lengthSeconds: number };
-  type AdaptiveFormat = { itag: number; type: string; bitrate: number };
 
   for (const instance of INVIDIOUS_INSTANCES) {
     try {
-      // 1. Search for the best matching video
       const searchUrl = `${instance}/api/v1/search?q=${encodeURIComponent(q)}&type=video&fields=videoId,title,author,lengthSeconds`;
-      const searchR = await fetch(searchUrl, { signal: AbortSignal.timeout(6000) });
+      const searchR = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
       if (!searchR.ok) continue;
+
       const searchData = await searchR.json() as InvidiousResult[];
       if (!Array.isArray(searchData) || searchData.length === 0) continue;
 
-      // Prefer official/audio/lyrics/topic channels, skip very short clips (<60s)
       const candidates = searchData.filter(v => v.lengthSeconds > 60);
-      const preferred = (candidates.length > 0 ? candidates : searchData).find(v =>
-        /official|audio|lyrics|topic/i.test(v.title) || /VEVO|Topic/i.test(v.author)
-      ) ?? (candidates.length > 0 ? candidates[0] : searchData[0]);
+      const pool = candidates.length > 0 ? candidates : searchData;
+
+      const preferred =
+        pool.find(v => /official.*music.*video|music.*video.*official/i.test(v.title)) ??
+        pool.find(v => /official.*video|official.*audio|official.*lyrics/i.test(v.title)) ??
+        pool.find(v => /VEVO|Topic/i.test(v.author)) ??
+        pool.find(v => /official/i.test(v.title)) ??
+        pool[0];
+
       if (!preferred?.videoId) continue;
 
-      // 2. Fetch adaptive formats for the video
-      const videoUrl = `${instance}/api/v1/videos/${preferred.videoId}?fields=adaptiveFormats`;
-      const videoR = await fetch(videoUrl, { signal: AbortSignal.timeout(8000) });
-      if (!videoR.ok) continue;
-      const videoData = await videoR.json() as { adaptiveFormats?: AdaptiveFormat[] };
+      const { videoId, title, author } = preferred;
 
-      const audioFormats = (videoData.adaptiveFormats ?? []).filter(f => f.type?.startsWith("audio/"));
-      // Prefer itag 140 (m4a/128kbps) then 251 (webm opus) then anything
-      const best = audioFormats.find(f => f.itag === 140)
-        ?? audioFormats.find(f => f.itag === 251)
-        ?? audioFormats.find(f => f.itag === 250)
-        ?? audioFormats[0];
-      if (!best) continue;
+      const result = {
+        videoId,
+        instance,
+        title,
+        author,
+        embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`,
+        downloadVideoUrl: `${instance}/latest_version?id=${videoId}&itag=22&local=true`,
+        downloadAudioUrl: `${instance}/latest_version?id=${videoId}&itag=140&local=true`,
+        audioUrl: `${instance}/latest_version?id=${videoId}&itag=140&local=true`,
+      };
 
-      // 3. Return Invidious audio proxy URL — streams through Invidious, avoids CORS
-      const audioUrl = `${instance}/latest_version?id=${preferred.videoId}&itag=${best.itag}&local=true`;
-      const result = { audioUrl, title: preferred.title, videoId: preferred.videoId };
       cache.set(cacheKey, { data: result, expires: Date.now() + YT_CACHE_TTL });
       res.json(result);
       return;
@@ -109,8 +117,8 @@ router.get("/music/stream", async (req, res): Promise<void> => {
     }
   }
 
-  logger.warn({ q }, "All Invidious instances failed for audio stream lookup");
-  res.status(502).json({ error: "Could not find audio stream" });
+  logger.warn({ q }, "All Invidious instances failed for music video lookup");
+  res.status(502).json({ error: "Could not find music video" });
 });
 
 export default router;

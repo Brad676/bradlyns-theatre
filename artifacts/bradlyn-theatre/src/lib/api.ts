@@ -121,24 +121,26 @@ export type MusicTrack = {
   isStreamable?: boolean;
 };
 
-export async function fetchMusicStream(trackName: string, artistName: string): Promise<{ audioUrl: string } | null> {
+export type MusicStreamResult = {
+  videoId: string;
+  instance: string;
+  title: string;
+  author: string;
+  embedUrl: string;
+  downloadVideoUrl: string;
+  downloadAudioUrl: string;
+  audioUrl: string;
+};
+
+export async function fetchMusicStream(trackName: string, artistName: string): Promise<MusicStreamResult | null> {
   try {
-    const q = `${trackName} ${artistName}`;
+    const q = `${trackName} ${artistName} official music video`;
     const r = await fetch(`${API_BASE}/music/stream?q=${encodeURIComponent(q)}`);
     if (!r.ok) return null;
-    return r.json() as Promise<{ audioUrl: string }>;
+    return r.json() as Promise<MusicStreamResult>;
   } catch {
     return null;
   }
-}
-
-export async function fetchYouTubeId(trackName: string, artistName: string): Promise<{ videoId: string; title: string; author: string } | null> {
-  const q = `${trackName} ${artistName} official audio`;
-  try {
-    const r = await fetch(`${API_BASE}/music/youtube?q=${encodeURIComponent(q)}`, { cache: "no-store" });
-    if (!r.ok) return null;
-    return r.json();
-  } catch { return null; }
 }
 
 export async function fetchMusicTracks(term: string, country?: string, limit = 25): Promise<MusicTrack[]> {
