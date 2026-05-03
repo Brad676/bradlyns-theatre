@@ -101,15 +101,21 @@ function MusicPlayer({
   const art = artworkUrl(track.artworkUrl100, 600);
   const artThumb = artworkUrl(track.artworkUrl100, 80);
 
-  // Build the YouTube embed URL (only when we have a real videoId)
+  // YouTube embed — autoplay=1 works because the user just clicked the card
   const embedUrl = streamInfo?.videoId
-    ? `https://www.youtube.com/embed/${streamInfo.videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1`
+    ? `https://www.youtube-nocookie.com/embed/${streamInfo.videoId}?autoplay=1&rel=0&modestbranding=1`
     : null;
 
-  // cobalt.tools — free, no login, download audio or video
+  const ytWatchUrl = streamInfo?.videoId
+    ? `https://www.youtube.com/watch?v=${streamInfo.videoId}`
+    : null;
+
   const cobaltUrl = streamInfo?.videoId
     ? `https://cobalt.tools/?u=${encodeURIComponent(`https://www.youtube.com/watch?v=${streamInfo.videoId}`)}`
     : null;
+
+  // iTunes 30-second preview (direct MP3/M4A — always works in browser)
+  const previewUrl = track.previewUrl ?? null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -135,7 +141,6 @@ function MusicPlayer({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-          {/* Video / Audio toggle */}
           <div className="flex rounded-xl bg-white/8 border border-white/10 p-0.5 gap-0.5">
             <button
               onClick={() => onMode("video")}
@@ -160,20 +165,23 @@ function MusicPlayer({
       {/* ── Player body ── */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
 
-        {streamLoading ? (
-          /* Loading state */
+        {streamLoading && mode === "video" ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <Loader2 size={40} className="text-purple-400 animate-spin" />
             <p className="text-gray-400 text-sm">Finding music video…</p>
             <p className="text-gray-600 text-xs">{track.trackName} — {track.artistName}</p>
           </div>
 
-        ) : !embedUrl ? (
-          /* Error state */
+        ) : mode === "video" && !embedUrl ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
             <AlertCircle size={40} className="text-red-400" />
             <p className="text-gray-200 font-medium">Could not find this track on YouTube</p>
             <p className="text-gray-500 text-sm">{track.trackName} — {track.artistName}</p>
+            {previewUrl && (
+              <button onClick={() => onMode("audio")} className="mt-2 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold hover:bg-purple-500/30 transition-colors">
+                <Headphones size={12} className="inline mr-1" /> Try Audio Preview
+              </button>
+            )}
           </div>
 
         ) : mode === "video" ? (
@@ -181,7 +189,7 @@ function MusicPlayer({
           <div className="flex-1 relative bg-black">
             <iframe
               key={`video-${streamInfo!.videoId}`}
-              src={embedUrl}
+              src={embedUrl!}
               title={track.trackName}
               className="absolute inset-0 w-full h-full"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
@@ -191,47 +199,70 @@ function MusicPlayer({
           </div>
 
         ) : (
-          /* ── AUDIO MODE: big album art + compact YouTube player at bottom ── */
-          <div className="flex-1 flex flex-col min-h-0">
-            {/* Album art section */}
-            <div className="flex-1 flex flex-col items-center justify-center px-6 py-6 min-h-0 bg-gradient-to-b from-gray-900 via-black to-black">
-              <div className="relative mb-5">
-                <img
-                  src={art}
-                  alt={track.trackName}
-                  className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl object-cover shadow-2xl"
-                  style={{ boxShadow: "0 0 80px rgba(168,85,247,0.35), 0 20px 60px rgba(0,0,0,0.8)" }}
-                />
-                {/* Animated glow ring */}
-                <div className="absolute -inset-2 rounded-[20px] border border-purple-500/20 animate-pulse" style={{ animationDuration: "2.5s" }} />
-              </div>
-              <h2 className="text-white text-xl font-bold text-center leading-tight max-w-xs">{track.trackName}</h2>
-              <p className="text-gray-400 text-sm mt-1 text-center">{track.artistName}</p>
-              {track.collectionName && <p className="text-gray-600 text-xs mt-0.5 text-center truncate max-w-xs">{track.collectionName}</p>}
-              <div className="flex items-center gap-2 mt-4 px-4 py-2 rounded-full bg-purple-500/15 border border-purple-500/25">
-                <PlayingBars />
-                <span className="text-purple-300 text-xs font-medium">Full audio playing below</span>
-              </div>
+          /* ── AUDIO MODE: album art + native audio player ── */
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 bg-gradient-to-b from-gray-900 via-black to-black gap-6">
+            <div className="relative">
+              <img
+                src={art}
+                alt={track.trackName}
+                className="w-52 h-52 sm:w-64 sm:h-64 rounded-2xl object-cover shadow-2xl"
+                style={{ boxShadow: "0 0 80px rgba(168,85,247,0.35), 0 20px 60px rgba(0,0,0,0.8)" }}
+              />
+              <div className="absolute -inset-2 rounded-[20px] border border-purple-500/20 animate-pulse" style={{ animationDuration: "2.5s" }} />
             </div>
 
-            {/* Compact YouTube player strip — plays the full video audio */}
-            <div className="flex-shrink-0 border-t border-white/10 bg-black" style={{ height: "120px" }}>
-              <iframe
-                key={`audio-${streamInfo!.videoId}`}
-                src={embedUrl}
-                title={track.trackName}
-                className="w-full h-full"
-                allow="autoplay; encrypted-media"
-                style={{ border: "none", display: "block" }}
-              />
+            <div className="text-center">
+              <h2 className="text-white text-xl font-bold leading-tight max-w-xs">{track.trackName}</h2>
+              <p className="text-gray-400 text-sm mt-1">{track.artistName}</p>
+              {track.collectionName && <p className="text-gray-600 text-xs mt-0.5 truncate max-w-xs">{track.collectionName}</p>}
             </div>
+
+            {/* Native audio player using iTunes 30-second preview */}
+            {previewUrl ? (
+              <div className="w-full max-w-sm flex flex-col items-center gap-3">
+                <audio
+                  key={previewUrl}
+                  controls
+                  autoPlay
+                  className="w-full"
+                  style={{ accentColor: "#a855f7" }}
+                >
+                  <source src={previewUrl} />
+                </audio>
+                <p className="text-gray-600 text-xs text-center">30-second preview · Apple Music</p>
+                {ytWatchUrl && (
+                  <a
+                    href={ytWatchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-300 text-xs font-medium hover:bg-white/10 transition-colors"
+                  >
+                    <Video size={12} /> Watch full video on YouTube
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <AlertCircle size={28} className="text-gray-500" />
+                <p className="text-gray-500 text-sm">No audio preview available</p>
+                {ytWatchUrl && (
+                  <a
+                    href={ytWatchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold hover:bg-purple-500/30 transition-colors"
+                  >
+                    <Video size={12} /> Open on YouTube
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* ── Bottom bar ── */}
       <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 border-t border-white/10 gap-3">
-        {/* Prev / Next */}
         <div className="flex items-center gap-1">
           <button onClick={onPrev} disabled={!hasPrev} title="Previous (←)"
             className="p-2 text-gray-400 hover:text-white transition-colors disabled:opacity-25 disabled:cursor-not-allowed rounded-lg hover:bg-white/10">
@@ -243,7 +274,6 @@ function MusicPlayer({
           </button>
         </div>
 
-        {/* Download */}
         {cobaltUrl ? (
           <a
             href={cobaltUrl}

@@ -22,8 +22,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       setAuthToken(token);
       apiGet("auth/me")
-        .then(r => r.json())
-        .then((data: User) => setUser(data))
+        .then(r => {
+          if (!r.ok) throw new Error("Token invalid");
+          return r.json();
+        })
+        .then((data: User) => {
+          if (data && data.userId) setUser(data);
+          else throw new Error("Bad user data");
+        })
         .catch(() => {
           setAuthToken(null);
         })
@@ -34,23 +40,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (username: string, password: string) => {
-    const r = await apiPost("auth/login", { username, password });
-    if (!r.ok) {
-      const e = await r.json();
-      throw new Error(e.error ?? "Login failed");
+    let r: Response;
+    try {
+      r = await apiPost("auth/login", { username, password });
+    } catch {
+      throw new Error("Cannot reach server. Check your connection.");
     }
-    const data = await r.json() as { token: string; user: User };
+    if (!r.ok) {
+      let msg = "Login failed";
+      try { const e = await r.json(); msg = e.error ?? msg; } catch { /* ignore */ }
+      throw new Error(msg);
+    }
+    let data: { token: string; user: User };
+    try {
+      data = await r.json() as { token: string; user: User };
+    } catch {
+      throw new Error("Unexpected server response. Please try again.");
+    }
     setAuthToken(data.token);
     setUser(data.user);
   };
 
   const register = async (username: string, password: string, email?: string) => {
-    const r = await apiPost("auth/register", { username, password, ...(email ? { email } : {}) });
-    if (!r.ok) {
-      const e = await r.json();
-      throw new Error(e.error ?? "Registration failed");
+    let r: Response;
+    try {
+      r = await apiPost("auth/register", { username, password, ...(email ? { email } : {}) });
+    } catch {
+      throw new Error("Cannot reach server. Check your connection.");
     }
-    const data = await r.json() as { token: string; user: User };
+    if (!r.ok) {
+      let msg = "Registration failed";
+      try { const e = await r.json(); msg = e.error ?? msg; } catch { /* ignore */ }
+      throw new Error(msg);
+    }
+    let data: { token: string; user: User };
+    try {
+      data = await r.json() as { token: string; user: User };
+    } catch {
+      throw new Error("Unexpected server response. Please try again.");
+    }
     setAuthToken(data.token);
     setUser(data.user);
   };
