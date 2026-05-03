@@ -65,7 +65,11 @@ export default function Detail() {
     setEpisodesLoading(true);
     try {
       const res = await apiGet(`proxy/episodes/${subjectId}?title=${encodeURIComponent(subject?.title ?? "")}`);
-      const data: EpisodeData = await res.json();
+      const raw: unknown = await res.json();
+      // Normalize: handle { seasons:[] }, { data:{ seasons:[] } }, and missing/undefined seasons
+      const r = raw as { seasons?: Season[]; data?: { seasons?: Season[] } };
+      const seasons = r.seasons ?? r.data?.seasons ?? [];
+      const data: EpisodeData = { seasons: Array.isArray(seasons) ? seasons : [] };
       setEpisodeData(data);
       setShowEpisodes(true);
     } catch {
@@ -106,7 +110,7 @@ export default function Detail() {
 
   const trailerUrl = richDetail?.trailerUrl ?? (subject?.trailer as { videoAddress?: { url?: string } } | null)?.videoAddress?.url;
   const isSeries = subject?.subjectType === 2;
-  const currentSeasonData = episodeData?.seasons.find(s => s.season === selectedSeason);
+  const currentSeasonData = (episodeData?.seasons ?? []).find(s => s.season === selectedSeason);
 
   if (loading) {
     return (

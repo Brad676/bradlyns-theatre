@@ -102,11 +102,13 @@ export default function Watch() {
     navigate(`/watch/${subjectId}?season=${season}&episode=${episode}`);
   };
 
-  const currentSeasonData = episodeData?.seasons.find(s => s.season === currentSeason);
-  const currentEpisodeData = currentSeasonData?.episodes.find(e => e.episode === currentEpisode);
-  const totalEpisodesInSeason = currentSeasonData?.episodes.length ?? 0;
-  const hasPrev = currentEpisode > 1;
-  const hasNext = currentEpisode < totalEpisodesInSeason;
+  const allSeasons = episodeData?.seasons ?? [];
+  const currentSeasonData = allSeasons.find(s => s.season === currentSeason);
+  const allEpisodes = currentSeasonData?.episodes ?? [];
+  const currentEpisodeData = allEpisodes.find(e => e.episode === currentEpisode);
+  const totalEpisodesInSeason = allEpisodes.length;
+  const hasPrev = currentEpisode > 1 || currentSeason > 1;
+  const hasNext = currentEpisode < totalEpisodesInSeason || currentSeason < allSeasons.length;
 
   const displayTitle = isSeries
     ? `${subject?.title ?? ""} — S${currentSeason}:E${currentEpisode}${currentEpisodeData?.title ? ` · ${currentEpisodeData.title}` : ""}`
@@ -157,19 +159,29 @@ export default function Watch() {
         ) : null}
       </div>
 
-      {isSeries && episodeData && !loading && (
+      {isSeries && episodeData && (
         <div className="glass border-t border-white/5">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+          {/* Season tabs + Prev/Next */}
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
             <button
-              onClick={() => hasPrev && goToEpisode(currentSeason, currentEpisode - 1)}
+              onClick={() => {
+                if (currentEpisode > 1) {
+                  goToEpisode(currentSeason, currentEpisode - 1);
+                } else if (currentSeason > 1) {
+                  const prevSeason = allSeasons.find(s => s.season === currentSeason - 1);
+                  const lastEp = prevSeason?.episodes.at(-1)?.episode ?? 1;
+                  goToEpisode(currentSeason - 1, lastEp);
+                }
+              }}
               disabled={!hasPrev}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
             >
               <ChevronLeft size={14} /> Prev
             </button>
 
-            <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-              {episodeData.seasons.map(s => (
+            {/* Season selector */}
+            <div className="flex gap-1 overflow-x-auto flex-1" style={{ scrollbarWidth: "none" }}>
+              {allSeasons.map(s => (
                 <button
                   key={s.season}
                   onClick={() => goToEpisode(s.season, 1)}
@@ -179,28 +191,37 @@ export default function Watch() {
                       : "text-gray-500 hover:text-white border border-transparent hover:border-white/10"
                   }`}
                 >
-                  S{s.season}
+                  Season {s.season}
                 </button>
               ))}
             </div>
 
             <div className="flex items-center gap-1.5 text-sm text-white font-medium flex-shrink-0">
               <Tv size={14} className="text-cyan-400" />
-              S{currentSeason} E{currentEpisode}
+              S{currentSeason} · E{currentEpisode}
+              {loading && <Loader2 size={13} className="animate-spin text-cyan-400 ml-1" />}
             </div>
 
             <button
-              onClick={() => hasNext && goToEpisode(currentSeason, currentEpisode + 1)}
+              onClick={() => {
+                if (currentEpisode < totalEpisodesInSeason) {
+                  goToEpisode(currentSeason, currentEpisode + 1);
+                } else {
+                  const nextSeasonData = allSeasons.find(s => s.season === currentSeason + 1);
+                  if (nextSeasonData) goToEpisode(currentSeason + 1, 1);
+                }
+              }}
               disabled={!hasNext}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ml-auto"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-white/10 text-gray-400 hover:text-white hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
             >
               Next <ChevronRight size={14} />
             </button>
           </div>
 
+          {/* Episode grid for current season */}
           <div className="max-w-6xl mx-auto px-4 pb-3">
             <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-              {currentSeasonData?.episodes.map(ep => (
+              {allEpisodes.map(ep => (
                 <button
                   key={ep.episode}
                   onClick={() => goToEpisode(currentSeason, ep.episode)}
