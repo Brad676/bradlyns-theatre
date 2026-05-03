@@ -40,11 +40,64 @@ export async function searchSubjects(keyword: string, page = 1, perPage = 20, su
   return r.json();
 }
 
+function extractVideoUrl(json: unknown): string | null {
+  const j = json as {
+    code?: number;
+    data?: {
+      mediaUrl?: string; url?: string; playUrl?: string;
+      videoUrl?: string; streamUrl?: string;
+      mediaInfo?: { url?: string };
+      playInfo?: { url?: string };
+    };
+  };
+  if (j.code !== undefined && j.code !== 0) return null;
+  const d = j.data;
+  return d?.mediaUrl ?? d?.url ?? d?.playUrl ?? d?.videoUrl
+    ?? d?.streamUrl ?? d?.mediaInfo?.url ?? d?.playInfo?.url ?? null;
+}
+
 export async function directStreamFetch(subjectId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {
-  if (season && episode) {
-    return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&se=${encodeURIComponent(String(season))}&ep=${encodeURIComponent(String(episode))}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`;
+  const params: Record<string, string> = { subjectId, resolution, lang };
+  if (season !== undefined && episode !== undefined) {
+    params.se = String(season);
+    params.ep = String(episode);
   }
-  return `https://movieapi.xcasper.space/api/bff/stream?subjectId=${encodeURIComponent(subjectId)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`;
+  const query = new URLSearchParams(params).toString();
+  const directUrl = `https://movieapi.xcasper.space/api/bff/stream?${query}`;
+
+  // 1. Try direct browser fetch — the browser's Cloudflare fingerprint lets this through
+  try {
+    const r = await fetch(directUrl, {
+      headers: { "Referer": "https://movieapi.xcasper.space/" },
+    });
+    if (r.ok) {
+      const ct = r.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        const json = await r.json();
+        const extracted = extractVideoUrl(json);
+        if (extracted) return extracted;
+      } else {
+        // API returned video/stream directly — use the URL as-is
+        return directUrl;
+      }
+    }
+  } catch {
+    // CORS or network error — fall through to proxy attempt
+  }
+
+  // 2. Try proxy (works for non-CF-protected content)
+  try {
+    const r2 = await fetch(`${EXTERNAL_API_BASE}/bff/stream?${query}`);
+    if (r2.ok) {
+      const json2 = await r2.json();
+      const extracted2 = extractVideoUrl(json2);
+      if (extracted2) return extracted2;
+    }
+  } catch { /* ignore */ }
+
+  // 3. Last resort: hand the raw URL to the <video> element; it may succeed
+  //    where fetch() failed (different request context / CF cookie state)
+  return directUrl;
 }
 
 export async function getStreamUrl(subjectId: string, season?: number, episode?: number, resolution = "720", lang = "En"): Promise<string | null> {

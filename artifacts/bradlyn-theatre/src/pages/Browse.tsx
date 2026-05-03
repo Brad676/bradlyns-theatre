@@ -106,7 +106,7 @@ export default function Browse() {
     return () => obs.disconnect();
   }, [hasMore, loading, page]);
 
-  const FilterSidebar = () => (
+  const filterSidebarJsx = (
     <aside className="w-56 flex-shrink-0 space-y-4">
       <div>
         <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Type</p>
@@ -169,13 +169,13 @@ export default function Browse() {
 
       {sidebarOpen && (
         <div className="md:hidden mb-6 glass rounded-xl p-4 neon-border">
-          <FilterSidebar />
+          {filterSidebarJsx}
         </div>
       )}
 
       <div className="flex gap-8">
         <div className="hidden md:block">
-          <FilterSidebar />
+          {filterSidebarJsx}
         </div>
         <div className="flex-1">
           {loading && results.length === 0 ? (

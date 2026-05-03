@@ -70,7 +70,12 @@ export default function Watch() {
         if (isSer) {
           apiGet(`proxy/episodes/${subjectId}?title=${encodeURIComponent(s?.title ?? "")}`)
             .then(r => r.json())
-            .then((ed: EpisodeData) => setEpisodeData(ed))
+            .then((raw: unknown) => {
+              // Normalize: handle both { seasons: [] } and { data: { seasons: [] } } shapes
+              const r2 = raw as { seasons?: Season[]; data?: { seasons?: Season[] } };
+              const normalized: EpisodeData = { seasons: r2.seasons ?? r2.data?.seasons ?? [] };
+              setEpisodeData(normalized);
+            })
             .catch(() => {});
         }
         resolveStream(subjectId, isSer ? seasonParam : undefined, isSer ? episodeParam : undefined);
