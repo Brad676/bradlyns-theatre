@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Music2, MapPin, Globe, TrendingUp, Play, Pause,
-  SkipBack, SkipForward, Volume2, VolumeX, X, ExternalLink, ChevronRight,
+  SkipBack, SkipForward, Volume2, VolumeX, X, ExternalLink, ChevronRight, Search,
 } from "lucide-react";
 import { type MusicTrack, fetchMusicTracks } from "@/lib/api";
 
@@ -399,6 +399,10 @@ function RegionSection({
 
 export default function Music() {
   const [activeTab, setActiveTab] = useState<RegionId>("africa");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<MusicTrack[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -406,6 +410,22 @@ export default function Music() {
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const runMusicSearch = useCallback((q: string) => {
+    if (!q.trim()) { setSearchResults([]); return; }
+    setSearchLoading(true);
+    fetchMusicTracks(q.trim(), undefined, 50)
+      .then(tracks => setSearchResults(tracks))
+      .catch(() => setSearchResults([]))
+      .finally(() => setSearchLoading(false));
+  }, []);
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    if (!val.trim()) { setSearchResults([]); return; }
+    searchDebounce.current = setTimeout(() => runMusicSearch(val), 450);
+  };
 
   const loadTrack = useCallback((track: MusicTrack, playlist: MusicTrack[], index: number) => {
     const audio = audioRef.current;
@@ -518,60 +538,107 @@ export default function Music() {
       `}</style>
 
       <div className={`pt-20 pb-${playerState ? "24" : "12"}`}>
-        <div className="px-4 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500/40 to-pink-500/40 border border-purple-500/30 flex items-center justify-center">
+        <div className="px-4 mb-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500/40 to-pink-500/40 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
               <Music2 size={22} className="text-purple-300" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold text-white">Music</h1>
-              <p className="text-gray-400 text-sm">Live previews · Africa · Europe · Asia · Australia · Americas · Worldwide</p>
+              <p className="text-gray-400 text-sm">Live previews · Africa · Europe · Asia · Americas · Worldwide</p>
             </div>
             {playerState && isPlaying && (
-              <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
                 <PlayingBars />
                 <span className="text-purple-300 text-xs font-medium truncate max-w-[120px]">{playerState.track.trackName}</span>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Tabs */}
-        <div className="px-4 mb-6 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-          <div className="flex gap-2 min-w-max">
-            {REGIONS.map(r => {
-              const Icon = r.icon;
-              const active = r.id === activeTab;
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => setActiveTab(r.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                    active
-                      ? `bg-gradient-to-r ${r.gradient} border border-white/20 text-white shadow-lg`
-                      : "bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  <Icon size={14} className={active ? r.iconColor : ""} />
-                  {r.label}
-                </button>
-              );
-            })}
+          {/* Search box */}
+          <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 focus-within:border-purple-500/50 transition-colors">
+            <Search size={16} className="text-gray-500 flex-shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder="Search songs, artists, albums…"
+              className="bg-transparent flex-1 text-white placeholder-gray-600 outline-none text-sm"
+            />
+            {searchQuery && (
+              <button onClick={() => { setSearchQuery(""); setSearchResults([]); }} className="text-gray-500 hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="space-y-10">
-          {REGIONS.map(region => (
-            <RegionSection
-              key={region.id}
-              region={region}
-              autoLoad={region.id === activeTab}
-              playerState={playerState}
-              isPlaying={isPlaying}
-              onPlay={loadTrack}
-            />
-          ))}
-        </div>
+        {/* Search results */}
+        {searchQuery ? (
+          <div className="px-4">
+            {searchLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                {Array.from({ length: 16 }).map((_, i) => <SkeletonCard key={i} />)}
+              </div>
+            ) : searchResults.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-12">No tracks found for "{searchQuery}"</p>
+            ) : (
+              <>
+                <p className="text-gray-500 text-xs mb-4">{searchResults.length} tracks for "{searchQuery}"</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                  {searchResults.map((t, i) => (
+                    <MusicCard
+                      key={t.trackId}
+                      track={t}
+                      isActive={playerState?.track.trackId === t.trackId}
+                      isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
+                      onPlay={() => loadTrack(t, searchResults, i)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Region tabs */}
+            <div className="px-4 mb-6 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+              <div className="flex gap-2 min-w-max">
+                {REGIONS.map(r => {
+                  const Icon = r.icon;
+                  const active = r.id === activeTab;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => setActiveTab(r.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                        active
+                          ? `bg-gradient-to-r ${r.gradient} border border-white/20 text-white shadow-lg`
+                          : "bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10"
+                      }`}
+                    >
+                      <Icon size={14} className={active ? r.iconColor : ""} />
+                      {r.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-10">
+              {REGIONS.map(region => (
+                <RegionSection
+                  key={region.id}
+                  region={region}
+                  autoLoad={region.id === activeTab}
+                  playerState={playerState}
+                  isPlaying={isPlaying}
+                  onPlay={loadTrack}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {playerState && (

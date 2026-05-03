@@ -35,7 +35,7 @@ export async function searchSubjects(keyword: string, page = 1, perPage = 20, su
   const obj: Record<string, string> = { keyword, page: String(page), perPage: String(perPage) };
   if (subjectType !== undefined && subjectType !== 0) obj.subjectType = String(subjectType);
   const params = new URLSearchParams(obj);
-  const r = await fetch(`${EXTERNAL_API_BASE}/search?${params.toString()}`);
+  const r = await fetch(`${EXTERNAL_API_BASE}/search?${params.toString()}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`API error: ${r.status}`);
   return r.json();
 }
@@ -125,10 +125,10 @@ export type MusicTrack = {
 
 export async function fetchMusicTracks(term: string, country?: string, limit = 25): Promise<MusicTrack[]> {
   const params = new URLSearchParams({ term, limit: String(limit), ...(country ? { country } : {}) });
-  const r = await fetch(`${API_BASE}/music/search?${params.toString()}`);
+  const r = await fetch(`${API_BASE}/music/search?${params.toString()}`, { cache: "no-store" });
   if (!r.ok) return [];
   const data = await r.json() as { results?: MusicTrack[] };
-  return (data.results ?? []).filter(t => t.previewUrl);
+  return data.results ?? [];
 }
 
 export async function apiPost(path: string, body: unknown): Promise<Response> {

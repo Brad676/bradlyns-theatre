@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Search as SearchIcon, X, Clock } from "lucide-react";
+import { Search as SearchIcon, X, Clock, TrendingUp } from "lucide-react";
 import { useLocation, useSearch } from "wouter";
 import { Card } from "@/components/Card";
-import { type Subject, searchSubjects, apiPost, apiGet } from "@/lib/api";
+import { type Subject, searchSubjects, externalFetch, apiPost, apiGet } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function SearchPage() {
@@ -14,6 +14,7 @@ export default function SearchPage() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [history, setHistory] = useState<{ id: number; keyword: string }[]>([]);
+  const [trendingFallback, setTrendingFallback] = useState<Subject[]>([]);
   const [, navigate] = useLocation();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user } = useAuth();
@@ -29,13 +30,26 @@ export default function SearchPage() {
   }, [user]);
 
   const doSearch = async (kw: string, pg = 1, append = false) => {
-    if (!kw.trim()) { setResults([]); return; }
+    if (!kw.trim()) { setResults([]); setTrendingFallback([]); return; }
     setLoading(true);
     try {
       const data = await searchSubjects(kw, pg, 24) as { data: { items?: Subject[]; subjectList?: Subject[]; pager: { hasMore: boolean } } };
       const items = data.data?.items ?? data.data?.subjectList ?? [];
       if (append) setResults(prev => [...prev, ...items]);
-      else setResults(items);
+      else {
+        setResults(items);
+        // When no results, fetch trending as suggestions
+        if (items.length === 0 && pg === 1) {
+          externalFetch("trending", { page: 1, perPage: 20 })
+            .then(td => {
+              const t = td as { data?: { items?: Subject[] } };
+              setTrendingFallback(t.data?.items ?? []);
+            })
+            .catch(() => {});
+        } else {
+          setTrendingFallback([]);
+        }
+      }
       setHasMore(data.data?.pager?.hasMore ?? false);
       setPage(pg);
       if (user && pg === 1) {
@@ -143,11 +157,21 @@ export default function SearchPage() {
                 <div key={i} className="rounded-lg bg-white/5 animate-pulse" style={{ aspectRatio: "2/3" }} />
               ))}
             </div>
-          ) : (
+          ) : results.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {results.map(s => <Card key={s.subjectId} subject={s} />)}
             </div>
-          )}
+          ) : !loading && trendingFallback.length > 0 ? (
+            <>
+              <div className="flex items-center gap-2 mb-4 mt-2">
+                <TrendingUp size={15} className="text-cyan-400" />
+                <p className="text-gray-400 text-sm">No exact matches — here's what's trending right now:</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {trendingFallback.map(s => <Card key={s.subjectId} subject={s} />)}
+              </div>
+            </>
+          ) : null}
           <div ref={observerRef} className="h-10 flex items-center justify-center mt-4">
             {loading && results.length > 0 && (
               <div className="w-6 h-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />

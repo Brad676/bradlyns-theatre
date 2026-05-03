@@ -30,7 +30,14 @@ async function cachedFetch(url: string, path: string): Promise<{ data: unknown; 
   }).then(async r => {
     const ct = r.headers.get("content-type") ?? "";
     const data = ct.includes("application/json") ? await r.json() : await r.text();
-    if (cacheable && r.status === 200) cache.set(url, { data, expires: Date.now() + CACHE_TTL });
+    if (cacheable && r.status === 200) {
+      // Don't cache empty search/browse results — let the next request try fresh
+      const d = data as { data?: { items?: unknown[]; subjectList?: unknown[] } };
+      const isEmptySearch = (path.startsWith("search") || path.startsWith("browse"))
+        && Array.isArray(d?.data?.items ?? d?.data?.subjectList)
+        && (d?.data?.items ?? d?.data?.subjectList ?? []).length === 0;
+      if (!isEmptySearch) cache.set(url, { data, expires: Date.now() + CACHE_TTL });
+    }
     inflight.delete(url);
     return { data, status: r.status };
   }).catch(err => { inflight.delete(url); throw err; });
