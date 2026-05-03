@@ -31,7 +31,6 @@ async function cachedFetch(url: string, path: string): Promise<{ data: unknown; 
     const ct = r.headers.get("content-type") ?? "";
     const data = ct.includes("application/json") ? await r.json() : await r.text();
     if (cacheable && r.status === 200) {
-      // Don't cache empty search/browse results — let the next request try fresh
       const d = data as { data?: { items?: unknown[]; subjectList?: unknown[] } };
       const isEmptySearch = (path.startsWith("search") || path.startsWith("browse"))
         && Array.isArray(d?.data?.items ?? d?.data?.subjectList)
@@ -47,23 +46,9 @@ async function cachedFetch(url: string, path: string): Promise<{ data: unknown; 
 }
 
 const ALLOWED_PATHS = [
-  "trending",
-  "hot",
-  "popular-search",
-  "search",
-  "search/suggest",
-  "detail",
-  "rich-detail",
-  "homepage",
-  "recommend",
-  "browse",
-  "ranking",
-  "staff/detail",
-  "staff/works",
-  "staff/related",
-  "bff/stream",
-  "episodes",
-  "stream",
+  "trending", "hot", "popular-search", "search", "search/suggest",
+  "detail", "rich-detail", "homepage", "recommend", "browse", "ranking",
+  "staff/detail", "staff/works", "staff/related", "bff/stream", "episodes", "stream",
 ];
 
 function isAllowed(path: string): boolean {
@@ -73,7 +58,7 @@ function isAllowed(path: string): boolean {
 router.get("/proxy/*splat", async (req, res): Promise<void> => {
   const pathParam = req.params.splat;
   const path = Array.isArray(pathParam) ? pathParam.join("/") : (pathParam ?? "");
-  
+
   if (!isAllowed(path)) {
     res.status(403).json({ error: "Forbidden path" });
     return;
@@ -105,6 +90,21 @@ router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
   res.json({ url });
 });
 
+/** DELETE cached episode data so it re-fetches on next request */
+router.delete("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
+  const subjectId = req.params.subjectId as string;
+  try {
+    const { db } = await import("@workspace/db");
+    const { episodeCacheTable } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+    await db.delete(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "Episode cache delete failed");
+    res.status(500).json({ error: "Cache delete failed" });
+  }
+});
+
 router.get("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
   const subjectIdRaw = req.params.subjectId;
   const subjectId = Array.isArray(subjectIdRaw) ? subjectIdRaw[0] : subjectIdRaw;
@@ -112,42 +112,85 @@ router.get("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
   const { episodeCacheTable } = await import("@workspace/db");
   const { eq } = await import("drizzle-orm");
 
+  // Return cached data if available
   const cached = await db.select().from(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
   if (cached.length > 0) {
-    res.json(JSON.parse(cached[0].episodeData));
-    return;
+    const parsed = JSON.parse(cached[0].episodeData);
+    // Migrate old records that lack duration
+    const needsMigration = parsed?.seasons?.[0]?.episodes?.[0]?.duration === undefined;
+    if (!needsMigration) {
+      res.json(parsed);
+      return;
+    }
+    // Delete stale cache so we re-fetch with duration
+    await db.delete(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
   }
 
-  let seriesTitle = req.query.title as string ?? "Unknown Series";
+  const seriesTitle = (req.query.title as string | undefined) ?? "Unknown Series";
+
+  // Ask AI for complete episode list including duration
+  const prompt = `Give me the complete episode list for the TV series "${seriesTitle}". ` +
+    `Return ONLY valid JSON in this exact format with no extra text: ` +
+    `{ "seasons": [ { "seasonNumber": 1, "episodes": [ { "episodeNumber": 1, "title": "Episode Title", "duration": "45m" } ] } ] }. ` +
+    `Use real episode titles and real durations where known. Include all seasons and all episodes.`;
 
   try {
-    const aiUrl = `https://apis.xwolf.space/api/gpt4?q=${encodeURIComponent(`Give me the episode list for series "${seriesTitle}" in JSON format: { "seasons": [ { "season": 1, "episodes": [ { "episode": 1, "title": "..." } ] } ] }`)}`;
-    const aiResp = await fetch(aiUrl, { signal: AbortSignal.timeout(10000) });
+    const aiUrl = `https://apis.xwolf.space/api/gpt4?q=${encodeURIComponent(prompt)}`;
+    const aiResp = await fetch(aiUrl, { signal: AbortSignal.timeout(12000) });
     if (aiResp.ok) {
       const text = await aiResp.text();
       const jsonMatch = text.match(/\{[\s\S]*"seasons"[\s\S]*\}/);
       if (jsonMatch) {
-        const episodeData = JSON.parse(jsonMatch[0]);
-        await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(episodeData) });
-        res.json(episodeData);
+        const raw = JSON.parse(jsonMatch[0]);
+        // Normalise: support both {season/episode} and {seasonNumber/episodeNumber}
+        const normalized = normalizeEpisodeData(raw);
+        await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(normalized) });
+        res.json(normalized);
         return;
       }
     }
   } catch (err) {
-    logger.warn({ err }, "AI episode fetch failed, falling back");
+    logger.warn({ err }, "AI episode fetch failed, falling back to generic data");
   }
 
-  const fallback = {
-    seasons: Array.from({ length: 3 }, (_, s) => ({
+  // Fallback: numbered episodes with estimated durations
+  const fallback = buildFallback();
+  await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(fallback) });
+  res.json(fallback);
+});
+
+/** Normalise varying AI response shapes into our canonical format */
+function normalizeEpisodeData(raw: unknown): { seasons: Array<{ season: number; episodes: Array<{ episode: number; title: string; duration: string }> }> } {
+  const r = raw as {
+    seasons?: Array<{
+      season?: number; seasonNumber?: number;
+      episodes?: Array<{ episode?: number; episodeNumber?: number; title?: string; duration?: string }>;
+    }>;
+  };
+
+  const seasons = (r.seasons ?? []).map(s => ({
+    season: s.season ?? s.seasonNumber ?? 1,
+    episodes: (s.episodes ?? []).map(e => ({
+      episode: e.episode ?? e.episodeNumber ?? 1,
+      title: e.title ?? `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
+      duration: e.duration ?? "~45m",
+    })),
+  }));
+
+  return { seasons };
+}
+
+function buildFallback() {
+  return {
+    seasons: Array.from({ length: 2 }, (_, s) => ({
       season: s + 1,
       episodes: Array.from({ length: 10 }, (_, e) => ({
         episode: e + 1,
         title: `Episode ${e + 1}`,
+        duration: "~45m",
       })),
     })),
   };
-  await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(fallback) });
-  res.json(fallback);
-});
+}
 
 export default router;

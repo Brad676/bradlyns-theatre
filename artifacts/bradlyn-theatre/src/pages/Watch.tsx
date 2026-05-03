@@ -2,46 +2,41 @@ import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import {
   ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight,
-  Tv, Loader2, List, X, Play,
+  Tv, Loader2, List, X, Play, Clock,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { externalFetch, apiGet, getStreamUrl } from "@/lib/api";
 import { type Subject } from "@/lib/api";
 
-type Episode = { episode: number; title: string };
-type Season = { season: number; episodes: Episode[] };
+type Episode    = { episode: number; title: string; duration?: string };
+type Season     = { season: number; episodes: Episode[] };
 type EpisodeData = { seasons: Season[] };
 
 export default function Watch() {
-  const [, params] = useRoute("/watch/:id");
-  const [location] = useLocation();
-  const subjectId = params?.id ?? "";
+  const [, params]   = useRoute("/watch/:id");
+  const [location]   = useLocation();
+  const subjectId    = params?.id ?? "";
 
-  const searchParams = new URLSearchParams(location.split("?")[1] ?? "");
-  const seasonParam  = parseInt(searchParams.get("season")  ?? "1", 10) || 1;
-  const episodeParam = parseInt(searchParams.get("episode") ?? "1", 10) || 1;
+  const searchParams  = new URLSearchParams(location.split("?")[1] ?? "");
+  const seasonParam   = parseInt(searchParams.get("season")  ?? "1", 10) || 1;
+  const episodeParam  = parseInt(searchParams.get("episode") ?? "1", 10) || 1;
 
-  const [streamUrl, setStreamUrl]     = useState<string | null>(null);
-  const [subject, setSubject]         = useState<Subject | null>(null);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-  const [resolution, setResolution]   = useState<"480" | "720" | "1080">("720");
-  const [episodeData, setEpisodeData] = useState<EpisodeData | null>(null);
+  const [streamUrl, setStreamUrl]         = useState<string | null>(null);
+  const [subject, setSubject]             = useState<Subject | null>(null);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState<string | null>(null);
+  const [resolution, setResolution]       = useState<"480" | "720" | "1080">("720");
+  const [episodeData, setEpisodeData]     = useState<EpisodeData | null>(null);
   const [currentSeason, setCurrentSeason]   = useState(seasonParam);
   const [currentEpisode, setCurrentEpisode] = useState(episodeParam);
   const [panelOpen, setPanelOpen]           = useState(false);
   const [panelSeason, setPanelSeason]       = useState(seasonParam);
   const [, navigate] = useLocation();
-  const activeEpRef = useRef<HTMLButtonElement | null>(null);
+  const activeEpRef  = useRef<HTMLButtonElement | null>(null);
 
   const isSeries = subject?.subjectType === 2;
 
-  const resolveStream = async (
-    id: string,
-    season?: number,
-    ep?: number,
-    res?: "480" | "720" | "1080",
-  ) => {
+  const resolveStream = async (id: string, season?: number, ep?: number, res?: "480" | "720" | "1080") => {
     setLoading(true);
     setError(null);
     setStreamUrl(null);
@@ -63,6 +58,7 @@ export default function Watch() {
     resolveStream(subjectId, isSer ? currentSeason : undefined, isSer ? currentEpisode : undefined, res);
   };
 
+  // Initial load
   useEffect(() => {
     if (!subjectId) return;
     setSubject(null);
@@ -74,7 +70,7 @@ export default function Watch() {
     externalFetch("detail", { subjectId })
       .then((d: unknown) => {
         const data = d as { data: { subject: Subject } };
-        const s = data.data?.subject ?? null;
+        const s    = data.data?.subject ?? null;
         setSubject(s);
         const isSer = s?.subjectType === 2;
         if (isSer) {
@@ -95,6 +91,7 @@ export default function Watch() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectId]);
 
+  // URL param changes (episode navigation)
   useEffect(() => {
     setCurrentSeason(seasonParam);
     setCurrentEpisode(episodeParam);
@@ -120,15 +117,15 @@ export default function Watch() {
     navigate(`/watch/${subjectId}?season=${season}&episode=${episode}`);
   };
 
-  const allSeasons    = episodeData?.seasons ?? [];
+  const allSeasons        = episodeData?.seasons ?? [];
   const panelSeasonData   = allSeasons.find(s => s.season === panelSeason);
   const panelEpisodes     = panelSeasonData?.episodes ?? [];
   const currentSeasonData = allSeasons.find(s => s.season === currentSeason);
   const allEpisodes       = currentSeasonData?.episodes ?? [];
   const currentEpisodeData = allEpisodes.find(e => e.episode === currentEpisode);
-  const totalEpisodesInSeason = allEpisodes.length;
+  const totalInSeason      = allEpisodes.length;
   const hasPrev = currentEpisode > 1 || currentSeason > 1;
-  const hasNext = currentEpisode < totalEpisodesInSeason || currentSeason < allSeasons.length;
+  const hasNext = currentEpisode < totalInSeason || currentSeason < allSeasons.length;
 
   const displayTitle = isSeries
     ? `${subject?.title ?? ""} — S${currentSeason}:E${currentEpisode}${currentEpisodeData?.title ? ` · ${currentEpisodeData.title}` : ""}`
@@ -145,19 +142,22 @@ export default function Watch() {
   };
 
   const goNext = () => {
-    if (currentEpisode < totalEpisodesInSeason) {
+    if (currentEpisode < totalInSeason) {
       goToEpisode(currentSeason, currentEpisode + 1);
     } else {
-      const nextSeasonData = allSeasons.find(s => s.season === currentSeason + 1);
-      if (nextSeasonData) goToEpisode(currentSeason + 1, 1);
+      const nextSeason = allSeasons.find(s => s.season === currentSeason + 1);
+      if (nextSeason) goToEpisode(currentSeason + 1, 1);
     }
   };
 
+  const coverUrl = subject?.cover?.url ?? "";
+
   return (
     <div className="min-h-screen bg-black flex flex-col">
-      {/* Top bar */}
+
+      {/* ── Top bar ── */}
       <div className="flex items-center gap-3 px-4 py-3 glass absolute top-0 left-0 right-0 z-20">
-        <Link href={subject ? `/detail/${subjectId}` : "/"}>
+        <Link href={subject ? `/detail/${subjectId}?season=${currentSeason}&episode=${currentEpisode}` : "/"}>
           <button className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2 text-sm transition-colors">
             <ArrowLeft size={18} />
             <span className="hidden sm:inline truncate max-w-[160px]">{subject?.title ?? "Back"}</span>
@@ -169,8 +169,10 @@ export default function Watch() {
         {isSeries && episodeData && (
           <button
             onClick={() => setPanelOpen(o => !o)}
-            className="flex items-center gap-1.5 text-gray-400 hover:text-cyan-400 p-1.5 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0 ml-auto"
-            title="Episodes"
+            className={`flex items-center gap-1.5 p-1.5 rounded-lg transition-colors flex-shrink-0 ml-auto text-sm ${
+              panelOpen ? "text-cyan-400 bg-cyan-500/10" : "text-gray-400 hover:text-cyan-400 hover:bg-white/10"
+            }`}
+            title="All Episodes"
           >
             <List size={18} />
             <span className="hidden sm:inline text-xs font-medium">Episodes</span>
@@ -178,10 +180,11 @@ export default function Watch() {
         )}
       </div>
 
-      {/* Main content + episode panel side-by-side */}
+      {/* ── Main content + side panel ── */}
       <div className="flex flex-1 pt-12 min-h-0">
+
         {/* Video area */}
-        <div className={`flex-1 flex items-center justify-center transition-all duration-300 ${panelOpen ? "pr-0 sm:pr-80" : ""}`}>
+        <div className={`flex-1 flex items-center justify-center transition-all duration-300 ${panelOpen ? "sm:pr-80" : ""}`}>
           {loading ? (
             <div className="text-center">
               <Loader2 size={40} className="text-cyan-400 mx-auto mb-3 animate-spin" />
@@ -203,7 +206,7 @@ export default function Watch() {
                 subjectId={subjectId}
                 subjectType={subject?.subjectType ?? 1}
                 title={displayTitle}
-                coverUrl={subject?.cover?.url}
+                coverUrl={coverUrl}
                 currentResolution={`${resolution}p` as "480p" | "720p" | "1080p"}
                 onResolutionChange={handleResolutionChange}
                 onEnded={isSeries && hasNext ? goNext : undefined}
@@ -212,7 +215,7 @@ export default function Watch() {
           ) : null}
         </div>
 
-        {/* Episode side panel */}
+        {/* ── Episode side panel ── */}
         {isSeries && episodeData && panelOpen && (
           <div className="fixed sm:absolute right-0 top-12 bottom-0 w-full sm:w-80 glass border-l border-white/10 flex flex-col z-30 overflow-hidden">
             {/* Panel header */}
@@ -220,90 +223,109 @@ export default function Watch() {
               <div className="flex items-center gap-2">
                 <Tv size={15} className="text-cyan-400" />
                 <span className="text-white font-semibold text-sm">Episodes</span>
-                <span className="text-gray-500 text-xs">
-                  {totalEpisodesInSeason > 0 ? `· S${currentSeason} E${currentEpisode}` : ""}
-                </span>
+                <span className="text-gray-500 text-xs">· S{currentSeason} E{currentEpisode}</span>
               </div>
-              <button
-                onClick={() => setPanelOpen(false)}
-                className="text-gray-500 hover:text-white p-1 rounded transition-colors"
-              >
+              <button onClick={() => setPanelOpen(false)} className="text-gray-500 hover:text-white p-1 rounded transition-colors">
                 <X size={16} />
               </button>
             </div>
 
-            {/* Season tabs */}
+            {/* Season selector */}
             {allSeasons.length > 1 && (
-              <div className="flex gap-1 px-3 pt-3 pb-2 overflow-x-auto flex-shrink-0" style={{ scrollbarWidth: "none" }}>
-                {allSeasons.map(s => (
-                  <button
-                    key={s.season}
-                    onClick={() => setPanelSeason(s.season)}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      panelSeason === s.season
-                        ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
-                        : "text-gray-500 hover:text-white border border-white/10 hover:border-white/20"
-                    }`}
+              <div className="px-3 pt-3 pb-2 flex-shrink-0">
+                {allSeasons.length <= 8 ? (
+                  <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+                    {allSeasons.map(s => (
+                      <button
+                        key={s.season}
+                        onClick={() => setPanelSeason(s.season)}
+                        className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          panelSeason === s.season
+                            ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                            : "text-gray-500 hover:text-white border border-white/10 hover:border-white/20"
+                        }`}
+                      >
+                        S{s.season} <span className="text-[10px] opacity-60">{s.episodes.length}ep</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <select
+                    value={panelSeason}
+                    onChange={e => setPanelSeason(Number(e.target.value))}
+                    className="w-full bg-white/10 border border-white/15 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500/50"
+                    style={{ background: "#0d1426" }}
                   >
-                    Season {s.season}
-                    <span className="ml-1 text-gray-600">
-                      {s.episodes.length}ep
-                    </span>
-                  </button>
-                ))}
+                    {allSeasons.map(s => (
+                      <option key={s.season} value={s.season} style={{ background: "#0a0f1f" }}>
+                        Season {s.season} ({s.episodes.length} episodes)
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
 
             {/* Episode list */}
             <div className="flex-1 overflow-y-auto divide-y divide-white/5">
               {panelEpisodes.length === 0 ? (
-                <div className="flex items-center justify-center h-32 text-gray-500 text-sm">No episodes found</div>
+                <div className="flex flex-col items-center justify-center h-32 text-center px-4">
+                  <Tv size={20} className="text-gray-600 mb-2" />
+                  <p className="text-gray-500 text-sm">Coming Soon</p>
+                  <p className="text-gray-700 text-xs mt-0.5">No episodes for this season yet</p>
+                </div>
               ) : panelEpisodes.map(ep => {
                 const isPlaying = panelSeason === currentSeason && ep.episode === currentEpisode;
                 return (
                   <button
                     key={ep.episode}
                     ref={isPlaying ? activeEpRef : null}
-                    onClick={() => { goToEpisode(panelSeason, ep.episode); }}
+                    onClick={() => goToEpisode(panelSeason, ep.episode)}
                     className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors group ${
                       isPlaying
                         ? "bg-cyan-500/10 border-l-2 border-cyan-400"
                         : "hover:bg-white/5 border-l-2 border-transparent"
                     }`}
                   >
-                    {/* Episode number badge */}
-                    <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${
-                      isPlaying
-                        ? "bg-cyan-500/20 text-cyan-400"
-                        : "bg-white/5 text-gray-500 group-hover:text-white group-hover:bg-white/10"
-                    }`}>
-                      {isPlaying
-                        ? <Play size={13} fill="currentColor" className="text-cyan-400" />
-                        : ep.episode}
+                    {/* Thumbnail */}
+                    <div className="flex-shrink-0 w-14 h-10 rounded-md overflow-hidden relative bg-gray-800">
+                      {coverUrl ? (
+                        <img src={coverUrl} alt="" className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
+                      ) : null}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                      {isPlaying ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-cyan-500/20">
+                          <Play size={12} fill="currentColor" className="text-cyan-400" />
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Play size={12} fill="white" className="text-white" />
+                        </div>
+                      )}
+                      <span className="absolute bottom-0.5 left-1 text-[9px] text-gray-300 font-bold">E{ep.episode}</span>
                     </div>
-                    {/* Episode info */}
+
+                    {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate transition-colors ${
-                        isPlaying ? "text-cyan-400" : "text-gray-200 group-hover:text-white"
-                      }`}>
+                      <p className={`text-xs font-medium truncate ${isPlaying ? "text-cyan-400" : "text-gray-200 group-hover:text-white"}`}>
                         {ep.title || `Episode ${ep.episode}`}
                       </p>
-                      <p className="text-gray-600 text-xs mt-0.5">
-                        S{panelSeason} · E{ep.episode}
-                        {isPlaying && loading && (
-                          <Loader2 size={10} className="inline ml-1 animate-spin text-cyan-400" />
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-gray-600 text-[10px]">S{panelSeason} · E{ep.episode}</p>
+                        {ep.duration && (
+                          <span className="flex items-center gap-0.5 text-[10px] text-gray-600">
+                            <Clock size={8} /> {ep.duration}
+                          </span>
                         )}
-                      </p>
+                        {isPlaying && loading && <Loader2 size={9} className="animate-spin text-cyan-400" />}
+                      </div>
                     </div>
-                    {!isPlaying && (
-                      <Play size={13} className="text-gray-700 group-hover:text-cyan-400 transition-colors flex-shrink-0" />
-                    )}
                   </button>
                 );
               })}
             </div>
 
-            {/* Prev / Next inside panel */}
+            {/* Panel footer — Prev / Next */}
             <div className="flex gap-2 px-4 py-3 border-t border-white/10 flex-shrink-0">
               <button
                 onClick={goPrev}
@@ -324,10 +346,11 @@ export default function Watch() {
         )}
       </div>
 
-      {/* Bottom episode bar (compact, always visible for series) */}
+      {/* ── Bottom bar (always visible for series) ── */}
       {isSeries && episodeData && (
-        <div className="glass border-t border-white/5 z-10">
+        <div className="glass border-t border-white/5 z-10 flex-shrink-0">
           <div className="max-w-6xl mx-auto px-4 py-2 flex items-center gap-3">
+            {/* Prev */}
             <button
               onClick={goPrev}
               disabled={!hasPrev}
@@ -357,10 +380,15 @@ export default function Watch() {
             <div className="flex items-center gap-1.5 text-xs text-white font-medium flex-shrink-0 ml-auto">
               <Tv size={12} className="text-cyan-400" />
               <span>S{currentSeason} E{currentEpisode}</span>
-              {loading && <Loader2 size={11} className="animate-spin text-cyan-400" />}
+              {currentEpisodeData?.duration && (
+                <span className="flex items-center gap-0.5 text-gray-500 ml-1">
+                  <Clock size={10} /> {currentEpisodeData.duration}
+                </span>
+              )}
+              {loading && <Loader2 size={11} className="animate-spin text-cyan-400 ml-1" />}
             </div>
 
-            {/* Open panel */}
+            {/* Toggle panel */}
             <button
               onClick={() => setPanelOpen(o => !o)}
               className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
@@ -373,6 +401,7 @@ export default function Watch() {
               <span className="hidden sm:inline">All Episodes</span>
             </button>
 
+            {/* Next */}
             <button
               onClick={goNext}
               disabled={!hasNext}
@@ -381,6 +410,28 @@ export default function Watch() {
               Next <ChevronRight size={13} />
             </button>
           </div>
+
+          {/* Episode number strip for current season */}
+          {allEpisodes.length > 0 && (
+            <div className="max-w-6xl mx-auto px-4 pb-2">
+              <div className="flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+                {allEpisodes.map(ep => (
+                  <button
+                    key={ep.episode}
+                    onClick={() => goToEpisode(currentSeason, ep.episode)}
+                    title={ep.title || `Episode ${ep.episode}`}
+                    className={`flex-shrink-0 w-9 h-9 rounded-lg border text-xs font-bold transition-all ${
+                      currentEpisode === ep.episode
+                        ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_8px_rgba(0,243,255,0.2)]"
+                        : "bg-white/5 border-white/10 text-gray-500 hover:text-white hover:border-white/20"
+                    }`}
+                  >
+                    {ep.episode}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
