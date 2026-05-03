@@ -285,8 +285,8 @@ function VideoModal({
           </button>
         </div>
 
-        {/* Download links — powered by Invidious, no login required */}
-        {streamInfo ? (
+        {/* Download links appear once the backend resolves the exact videoId */}
+        {streamInfo?.downloadAudioUrl ? (
           <div className="flex items-center gap-2">
             <a
               href={streamInfo.downloadAudioUrl}
@@ -308,7 +308,9 @@ function VideoModal({
             </a>
           </div>
         ) : (
-          <div />
+          <div className="flex items-center gap-1.5 text-gray-600 text-xs">
+            <Loader2 size={11} className="animate-spin" /> Finding download links…
+          </div>
         )}
       </div>
     </div>
@@ -455,18 +457,22 @@ export default function Music() {
 
     currentTrackIdRef.current = track.trackId;
     setPlayerState({ track, playlist, index });
-    setStreamInfo(null);
-    setStreamLoading(true);
+    setStreamLoading(false);
 
+    // Show a YouTube search-embed immediately — no backend call needed.
+    // This plays the best matching music video right away.
+    const searchQuery = `${track.trackName} ${track.artistName} official music video`;
+    const searchEmbed = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(searchQuery)}&autoplay=1&rel=0&modestbranding=1`;
+    setStreamInfo({ videoId: "", instance: "", title: track.trackName, author: track.artistName, embedUrl: searchEmbed, downloadVideoUrl: "", downloadAudioUrl: "", audioUrl: "" });
+
+    // Fetch the exact videoId in the background to get proper download links
+    // and swap to the precise embed once resolved.
     fetchMusicStream(track.trackName, track.artistName)
       .then(result => {
-        if (currentTrackIdRef.current !== track.trackId) return;
+        if (currentTrackIdRef.current !== track.trackId || !result?.videoId) return;
         setStreamInfo(result);
       })
-      .catch(() => {})
-      .finally(() => {
-        if (currentTrackIdRef.current === track.trackId) setStreamLoading(false);
-      });
+      .catch(() => {});
   }, [playerState]);
 
   const handleClose = useCallback(() => {

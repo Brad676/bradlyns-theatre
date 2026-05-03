@@ -8,13 +8,13 @@ const YT_CACHE_TTL = 60 * 60 * 1000;
 const cache = new Map<string, { data: unknown; expires: number }>();
 const inflight = new Map<string, Promise<unknown>>();
 
-const INVIDIOUS_INSTANCES = [
-  "https://inv.tux.pizza",
-  "https://invidious.privacydev.net",
-  "https://yt.cdaut.de",
-  "https://invidious.io.lol",
-  "https://invidious.fdn.fr",
-];
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+// Public Invidious instance used to build browser-side download URLs.
+// The server never fetches from Invidious — it only hands these URLs to the
+// user's browser, which can reach Invidious directly.
+const INVIDIOUS = "https://inv.tux.pizza";
 
 router.get("/music/search", async (req, res): Promise<void> => {
   const { term, country, limit = "25" } = req.query as Record<string, string>;
@@ -58,67 +58,62 @@ router.get("/music/search", async (req, res): Promise<void> => {
 });
 
 /**
- * Music video stream resolver.
- * Searches Invidious for the best matching music video, then returns:
- *   - embedUrl  : YouTube native embed URL  (plays full video in an iframe, free)
- *   - downloadVideoUrl : Invidious 720p video download
- *   - downloadAudioUrl : Invidious m4a audio download
- * No YouTube Data API key is needed.
+ * Music video resolver.
+ *
+ * Scrapes YouTube's search-results page (no API key required) to find the
+ * best matching videoId, then returns:
+ *   - embedUrl          : exact YouTube embed for that video
+ *   - downloadVideoUrl  : Invidious 720p download (fetched by the user's browser)
+ *   - downloadAudioUrl  : Invidious m4a download  (fetched by the user's browser)
+ *
+ * The server never contacts Invidious — it just constructs the URLs.
  */
 router.get("/music/stream", async (req, res): Promise<void> => {
   const { q } = req.query as Record<string, string>;
   if (!q) { res.status(400).json({ error: "q required" }); return; }
 
-  const cacheKey = `yt:${q}`;
+  const cacheKey = `yt-scrape:${q}`;
   const hit = cache.get(cacheKey);
   if (hit && hit.expires > Date.now()) { res.json(hit.data); return; }
 
-  type InvidiousResult = { videoId: string; title: string; author: string; lengthSeconds: number };
+  try {
+    // YouTube embeds the full search JSON in the page's <script> tags.
+    // Filter=EgIQAQ%3D%3D restricts results to videos only.
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%3D%3D`;
+    const r = await fetch(searchUrl, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) throw new Error(`YouTube returned ${r.status}`);
 
-  for (const instance of INVIDIOUS_INSTANCES) {
-    try {
-      const searchUrl = `${instance}/api/v1/search?q=${encodeURIComponent(q)}&type=video&fields=videoId,title,author,lengthSeconds`;
-      const searchR = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
-      if (!searchR.ok) continue;
+    const html = await r.text();
 
-      const searchData = await searchR.json() as InvidiousResult[];
-      if (!Array.isArray(searchData) || searchData.length === 0) continue;
+    // The first "videoId" occurrence in the page JSON is the top search result.
+    const videoIdMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+    const videoId = videoIdMatch?.[1];
+    if (!videoId) throw new Error("No videoId found in YouTube search results");
 
-      const candidates = searchData.filter(v => v.lengthSeconds > 60);
-      const pool = candidates.length > 0 ? candidates : searchData;
+    const result = {
+      videoId,
+      embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`,
+      downloadVideoUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=22&local=true`,
+      downloadAudioUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=140&local=true`,
+      audioUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=140&local=true`,
+      instance: INVIDIOUS,
+      title: q,
+      author: "",
+    };
 
-      const preferred =
-        pool.find(v => /official.*music.*video|music.*video.*official/i.test(v.title)) ??
-        pool.find(v => /official.*video|official.*audio|official.*lyrics/i.test(v.title)) ??
-        pool.find(v => /VEVO|Topic/i.test(v.author)) ??
-        pool.find(v => /official/i.test(v.title)) ??
-        pool[0];
-
-      if (!preferred?.videoId) continue;
-
-      const { videoId, title, author } = preferred;
-
-      const result = {
-        videoId,
-        instance,
-        title,
-        author,
-        embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`,
-        downloadVideoUrl: `${instance}/latest_version?id=${videoId}&itag=22&local=true`,
-        downloadAudioUrl: `${instance}/latest_version?id=${videoId}&itag=140&local=true`,
-        audioUrl: `${instance}/latest_version?id=${videoId}&itag=140&local=true`,
-      };
-
-      cache.set(cacheKey, { data: result, expires: Date.now() + YT_CACHE_TTL });
-      res.json(result);
-      return;
-    } catch {
-      continue;
-    }
+    cache.set(cacheKey, { data: result, expires: Date.now() + YT_CACHE_TTL });
+    res.json(result);
+  } catch (err) {
+    logger.warn({ q, err }, "YouTube search scrape failed");
+    res.status(502).json({ error: "Could not find music video" });
   }
-
-  logger.warn({ q }, "All Invidious instances failed for music video lookup");
-  res.status(502).json({ error: "Could not find music video" });
 });
 
 export default router;
