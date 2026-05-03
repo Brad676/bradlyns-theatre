@@ -32,7 +32,7 @@ export async function externalFetch(path: string, params: Record<string, string 
 }
 
 export async function searchSubjects(keyword: string, page = 1, perPage = 20, subjectType?: number): Promise<unknown> {
-  const obj: Record<string, string> = { keyword, page: String(page), perPage: String(perPage) };
+  const obj: Record<string, string> = { keyword, page: String(page), perPage: String(perPage), sort: "latest" };
   if (subjectType !== undefined && subjectType !== 0) obj.subjectType = String(subjectType);
   const params = new URLSearchParams(obj);
   const r = await fetch(`${EXTERNAL_API_BASE}/search?${params.toString()}`, { cache: "no-store" });

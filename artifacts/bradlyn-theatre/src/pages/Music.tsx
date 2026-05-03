@@ -392,7 +392,7 @@ function RegionSection({
               track={t}
               isActive={playerState?.track.trackId === t.trackId}
               isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
-              onPlay={() => onPlay(t, tracks, i)}
+              onPlay={() => { onPlay(t, tracks, i); onFullSong(t); }}
               onFullSong={onFullSong}
             />
           ))}
@@ -405,7 +405,7 @@ function RegionSection({
               track={t}
               isActive={playerState?.track.trackId === t.trackId}
               isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
-              onPlay={() => onPlay(t, tracks, i)}
+              onPlay={() => { onPlay(t, tracks, i); onFullSong(t); }}
               onFullSong={onFullSong}
             />
           ))}
@@ -617,7 +617,7 @@ export default function Music() {
                       track={t}
                       isActive={playerState?.track.trackId === t.trackId}
                       isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
-                      onPlay={() => loadTrack(t, searchResults, i)}
+                      onPlay={() => { loadTrack(t, searchResults, i); handleFullSong(t); }}
                       onFullSong={handleFullSong}
                     />
                   ))}

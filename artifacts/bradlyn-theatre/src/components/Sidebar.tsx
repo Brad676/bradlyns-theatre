@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Home, Search, Film, Tv, Bookmark, Users, User,
@@ -82,6 +82,11 @@ export function Sidebar() {
   const [showShare, setShowShare] = useState(false);
   const [location, navigate] = useLocation();
   const { user } = useAuth();
+
+  // Keep main content padding in sync with sidebar width via CSS variable
+  useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-w", expanded ? "224px" : "64px");
+  }, [expanded]);
 
   const randomTitle = async () => {
     try {

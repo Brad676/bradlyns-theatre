@@ -37,7 +37,7 @@ function WithLayout({ children }: { children: React.ReactNode }) {
     <>
       <Navbar />
       <Sidebar />
-      <div className="pl-16">
+      <div style={{ paddingLeft: "var(--sidebar-w, 64px)", transition: "padding-left 0.3s cubic-bezier(0.25,0.46,0.45,0.94)" }}>
         <Suspense fallback={<PageLoader />}>{children}</Suspense>
         <Footer />
       </div>
