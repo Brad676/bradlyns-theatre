@@ -457,22 +457,21 @@ export default function Music() {
 
     currentTrackIdRef.current = track.trackId;
     setPlayerState({ track, playlist, index });
-    setStreamLoading(false);
+    setStreamInfo(null);
+    setStreamLoading(true);
 
-    // Show a YouTube search-embed immediately — no backend call needed.
-    // This plays the best matching music video right away.
-    const searchQuery = `${track.trackName} ${track.artistName} official music video`;
-    const searchEmbed = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(searchQuery)}&autoplay=1&rel=0&modestbranding=1`;
-    setStreamInfo({ videoId: "", instance: "", title: track.trackName, author: track.artistName, embedUrl: searchEmbed, downloadVideoUrl: "", downloadAudioUrl: "", audioUrl: "" });
-
-    // Fetch the exact videoId in the background to get proper download links
-    // and swap to the precise embed once resolved.
+    // Resolve the exact videoId via the backend (InnerTube API).
+    // We never use listType=search embeds — those trigger YouTube's
+    // "sign in to confirm you're not a robot" page inside the iframe.
     fetchMusicStream(track.trackName, track.artistName)
       .then(result => {
-        if (currentTrackIdRef.current !== track.trackId || !result?.videoId) return;
+        if (currentTrackIdRef.current !== track.trackId) return;
         setStreamInfo(result);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (currentTrackIdRef.current === track.trackId) setStreamLoading(false);
+      });
   }, [playerState]);
 
   const handleClose = useCallback(() => {

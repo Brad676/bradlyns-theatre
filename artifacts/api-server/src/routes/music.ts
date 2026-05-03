@@ -11,9 +11,8 @@ const inflight = new Map<string, Promise<unknown>>();
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-// Public Invidious instance used to build browser-side download URLs.
-// The server never fetches from Invidious — it only hands these URLs to the
-// user's browser, which can reach Invidious directly.
+// Public Invidious instance — only used to build download URLs the user's
+// browser fetches directly. The server never contacts Invidious itself.
 const INVIDIOUS = "https://inv.tux.pizza";
 
 router.get("/music/search", async (req, res): Promise<void> => {
@@ -58,29 +57,64 @@ router.get("/music/search", async (req, res): Promise<void> => {
 });
 
 /**
- * Music video resolver.
+ * Music video resolver using YouTube's InnerTube API.
  *
- * Scrapes YouTube's search-results page (no API key required) to find the
- * best matching videoId, then returns:
- *   - embedUrl          : exact YouTube embed for that video
- *   - downloadVideoUrl  : Invidious 720p download (fetched by the user's browser)
- *   - downloadAudioUrl  : Invidious m4a download  (fetched by the user's browser)
+ * InnerTube is YouTube's own internal search API — the same one their
+ * web client uses. No API key or login is required for search queries.
+ * It works reliably from server-side and never triggers bot-detection
+ * in the user's browser (unlike the listType=search iframe embed).
  *
- * The server never contacts Invidious — it just constructs the URLs.
+ * Returns a specific videoId so the client can embed:
+ *   https://www.youtube.com/embed/{videoId}?autoplay=1
+ * (direct embeds never show the "confirm you're not a robot" prompt)
  */
 router.get("/music/stream", async (req, res): Promise<void> => {
   const { q } = req.query as Record<string, string>;
   if (!q) { res.status(400).json({ error: "q required" }); return; }
 
-  const cacheKey = `yt-scrape:${q}`;
+  const cacheKey = `innertube:${q}`;
   const hit = cache.get(cacheKey);
   if (hit && hit.expires > Date.now()) { res.json(hit.data); return; }
 
-  try {
-    // YouTube embeds the full search JSON in the page's <script> tags.
-    // Filter=EgIQAQ%3D%3D restricts results to videos only.
+  const resolveVideoId = async (): Promise<string> => {
+    // ── Strategy 1: YouTube InnerTube API (most reliable) ──────────────────
+    try {
+      const body = JSON.stringify({
+        query: q,
+        params: "EgIQAQ%3D%3D", // filter: videos only
+        context: {
+          client: {
+            clientName: "WEB",
+            clientVersion: "2.20231219.02.00",
+            hl: "en",
+            gl: "US",
+          },
+        },
+      });
+      const r = await fetch(
+        "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": BROWSER_UA,
+            "X-Youtube-Client-Name": "1",
+            "X-Youtube-Client-Version": "2.20231219.02.00",
+          },
+          body,
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+      if (r.ok) {
+        const json = await r.text();
+        const m = json.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+        if (m?.[1]) return m[1];
+      }
+    } catch { /* fall through */ }
+
+    // ── Strategy 2: YouTube search HTML scrape ─────────────────────────────
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%3D%3D`;
-    const r = await fetch(searchUrl, {
+    const r2 = await fetch(searchUrl, {
       headers: {
         "User-Agent": BROWSER_UA,
         "Accept-Language": "en-US,en;q=0.9",
@@ -88,30 +122,35 @@ router.get("/music/stream", async (req, res): Promise<void> => {
       },
       signal: AbortSignal.timeout(10000),
     });
-    if (!r.ok) throw new Error(`YouTube returned ${r.status}`);
+    if (r2.ok) {
+      const html = await r2.text();
+      const m2 = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+      if (m2?.[1]) return m2[1];
+    }
 
-    const html = await r.text();
+    throw new Error("Could not find a video ID for the query");
+  };
 
-    // The first "videoId" occurrence in the page JSON is the top search result.
-    const videoIdMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-    const videoId = videoIdMatch?.[1];
-    if (!videoId) throw new Error("No videoId found in YouTube search results");
+  try {
+    const videoId = await resolveVideoId();
 
     const result = {
       videoId,
-      embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`,
-      downloadVideoUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=22&local=true`,
-      downloadAudioUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=140&local=true`,
-      audioUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=140&local=true`,
       instance: INVIDIOUS,
       title: q,
       author: "",
+      embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`,
+      // Download URLs are fetched by the user's browser, not this server
+      downloadVideoUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=22&local=true`,
+      downloadAudioUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=140&local=true`,
+      audioUrl: `${INVIDIOUS}/latest_version?id=${videoId}&itag=140&local=true`,
+      watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
     };
 
     cache.set(cacheKey, { data: result, expires: Date.now() + YT_CACHE_TTL });
     res.json(result);
   } catch (err) {
-    logger.warn({ q, err }, "YouTube search scrape failed");
+    logger.warn({ q, err }, "Music video search failed (both strategies)");
     res.status(502).json({ error: "Could not find music video" });
   }
 });
