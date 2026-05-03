@@ -60,19 +60,74 @@ function isAllowed(path: string): boolean {
 // SPECIFIC ROUTES — must come BEFORE the general /*splat catch-all
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Stream URL resolver */
-router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
-  const subjectId = req.params.subjectId as string;
+/**
+ * Stream URL resolver — fetches bff/stream from upstream using the caller's
+ * own browser headers (User-Agent, Accept-Language, etc.) forwarded through.
+ * This gives us the best chance of bypassing bot-detection since the server
+ * presents as the real browser that initiated the request.
+ */
+router.get("/proxy/stream-url", async (req, res): Promise<void> => {
+  const subjectId  = (req.query.subjectId  as string | undefined) ?? "";
   const resolution = (req.query.resolution as string | undefined) ?? "720";
-  const lang       = (req.query.lang as string | undefined) ?? "En";
-  const season     = req.query.season as string | undefined;
-  const episode    = req.query.ep as string | undefined;
+  const lang       = (req.query.lang       as string | undefined) ?? "En";
+  const se         = req.query.se as string | undefined;
+  const ep         = req.query.ep as string | undefined;
 
-  const url = season && episode
-    ? `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(subjectId)}&se=${encodeURIComponent(season)}&ep=${encodeURIComponent(episode)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`
-    : `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(subjectId)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`;
+  if (!subjectId) { res.status(400).json({ error: "subjectId required" }); return; }
 
-  res.json({ url });
+  const params = new URLSearchParams({ subjectId, resolution, lang });
+  if (se && ep) { params.set("se", se); params.set("ep", ep); }
+  const upstreamUrl = `${BASE_URL}/bff/stream?${params.toString()}`;
+
+  // Forward the real browser's User-Agent and Accept-Language so the upstream
+  // API sees a genuine browser fingerprint instead of a headless/server one.
+  const forwardUA   = (req.headers["user-agent"] as string | undefined) ?? BROWSER_UA;
+  const forwardLang = (req.headers["accept-language"] as string | undefined) ?? "en-US,en;q=0.9";
+
+  const headerSets = [
+    // Attempt 1 — forward caller's exact headers
+    {
+      "User-Agent": forwardUA,
+      "Referer": "https://movieapi.xcasper.space/",
+      "Origin": "https://movieapi.xcasper.space",
+      "Accept": "application/json, */*",
+      "Accept-Language": forwardLang,
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "empty",
+    },
+    // Attempt 2 — hardcoded Chrome UA (some APIs only block non-Chrome UAs)
+    {
+      "User-Agent": BROWSER_UA,
+      "Referer": "https://movieapi.xcasper.space/",
+      "Accept": "*/*",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  ];
+
+  for (const headers of headerSets) {
+    try {
+      const r = await fetch(upstreamUrl, { headers, signal: AbortSignal.timeout(12000) });
+      if (r.ok) {
+        const ct = r.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          const json = await r.json() as { code?: number; data?: { mediaUrl?: string; url?: string; playUrl?: string; videoUrl?: string; streamUrl?: string } };
+          if (json.code === 0 || json.code === undefined) {
+            const d = json.data;
+            const videoUrl = d?.mediaUrl ?? d?.url ?? d?.playUrl ?? d?.videoUrl ?? d?.streamUrl;
+            if (videoUrl) { res.json({ url: videoUrl }); return; }
+          }
+        } else {
+          // API returned media directly — the URL itself is playable
+          res.json({ url: upstreamUrl }); return;
+        }
+      }
+    } catch { /* try next header set */ }
+  }
+
+  // Last resort: return the raw upstream URL and let the browser's video
+  // element attempt it — media element requests bypass some bot checks
+  res.json({ url: upstreamUrl });
 });
 
 /** Delete cached episode data so it re-fetches on next request */

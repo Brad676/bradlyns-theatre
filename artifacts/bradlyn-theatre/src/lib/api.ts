@@ -65,38 +65,36 @@ export async function directStreamFetch(subjectId: string, season?: number, epis
   const query = new URLSearchParams(params).toString();
   const directUrl = `https://movieapi.xcasper.space/api/bff/stream?${query}`;
 
-  // 1. Try direct browser fetch — the browser's Cloudflare fingerprint lets this through
+  // 1. Our server-side proxy forwards the real browser User-Agent/headers,
+  //    giving us the best chance of passing the upstream bot check.
   try {
-    const r = await fetch(directUrl, {
-      headers: { "Referer": "https://movieapi.xcasper.space/" },
-    });
+    const r = await fetch(`${API_BASE}/proxy/stream-url?${query}`);
     if (r.ok) {
-      const ct = r.headers.get("content-type") ?? "";
-      if (ct.includes("application/json")) {
-        const json = await r.json();
-        const extracted = extractVideoUrl(json);
-        if (extracted) return extracted;
-      } else {
-        // API returned video/stream directly — use the URL as-is
-        return directUrl;
-      }
-    }
-  } catch {
-    // CORS or network error — fall through to proxy attempt
-  }
-
-  // 2. Try proxy (works for non-CF-protected content)
-  try {
-    const r2 = await fetch(`${EXTERNAL_API_BASE}/bff/stream?${query}`);
-    if (r2.ok) {
-      const json2 = await r2.json();
-      const extracted2 = extractVideoUrl(json2);
-      if (extracted2) return extracted2;
+      const json = await r.json() as { url?: string };
+      if (json.url && json.url !== directUrl) return json.url;
+      // If it returned the raw directUrl as fallback, continue to step 2
     }
   } catch { /* ignore */ }
 
-  // 3. Last resort: hand the raw URL to the <video> element; it may succeed
-  //    where fetch() failed (different request context / CF cookie state)
+  // 2. Try browser direct fetch — bypasses CORS for same-origin video loads
+  try {
+    const r2 = await fetch(directUrl, {
+      headers: { "Referer": "https://movieapi.xcasper.space/" },
+    });
+    if (r2.ok) {
+      const ct = r2.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        const json2 = await r2.json();
+        const extracted = extractVideoUrl(json2);
+        if (extracted) return extracted;
+      } else {
+        return directUrl;
+      }
+    }
+  } catch { /* CORS or network error */ }
+
+  // 3. Last resort: the <video> element makes a media request (not a fetch),
+  //    which the browser treats differently — no CORS restriction on media elements.
   return directUrl;
 }
 

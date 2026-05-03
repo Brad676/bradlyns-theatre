@@ -420,16 +420,16 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
           key={src}
           ref={videoRef}
           src={src}
-          autoPlay
+          preload="auto"
+          playsInline
           {...{ "x-webkit-airplay": "allow" }}
           onLoadedMetadata={() => {
             const vid = videoRef.current;
             if (!vid) return;
             setDuration(vid.duration || 0);
             setVideoLoading(false);
-            if (vid.paused) {
-              vid.play().catch(() => {});
-            }
+            const p = vid.play();
+            if (p) p.catch(() => {});
           }}
           onClick={handleVideoClick}
           onPlay={() => setPlaying(true)}
@@ -442,7 +442,14 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
           }}
           onDurationChange={() => setDuration(videoRef.current?.duration ?? 0)}
           onWaiting={() => setVideoLoading(true)}
-          onCanPlay={() => setVideoLoading(false)}
+          onCanPlay={() => {
+            setVideoLoading(false);
+            const vid = videoRef.current;
+            if (vid && vid.paused) {
+              const p = vid.play();
+              if (p) p.catch(() => {});
+            }
+          }}
           onLoadedData={() => setVideoLoading(false)}
           onError={() => {
             setVideoLoading(false);
@@ -450,7 +457,6 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
             setFailedSrc(src);
           }}
           onEnded={savedOnEnd}
-          playsInline
           className="w-full h-full"
           style={{ background: "#000", outline: "none", objectFit: "cover" }}
         />
@@ -462,11 +468,29 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
         )}
 
         {playbackError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6 text-center">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/85 p-6 text-center z-20">
             <div className="max-w-sm">
-              <h3 className="text-white font-semibold text-lg mb-2">Playback error</h3>
-              <p className="text-gray-300 text-sm">{playbackError}</p>
-              {failedSrc && <p className="text-gray-500 text-[11px] mt-2 break-all">{failedSrc}</p>}
+              <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <X size={24} className="text-red-400" />
+              </div>
+              <h3 className="text-white font-semibold text-lg mb-2">Stream unavailable</h3>
+              <p className="text-gray-400 text-sm mb-5">{playbackError}</p>
+              <button
+                onClick={() => {
+                  setPlaybackError(null);
+                  setFailedSrc(null);
+                  setVideoLoading(true);
+                  const vid = videoRef.current;
+                  if (vid) {
+                    vid.load();
+                    const p = vid.play();
+                    if (p) p.catch(() => {});
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-sm font-medium hover:bg-cyan-500/30 transition-colors"
+              >
+                <Play size={14} fill="currentColor" /> Try Again
+              </button>
             </div>
           </div>
         )}
