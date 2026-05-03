@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Music2, MapPin, Globe, TrendingUp, Play, Pause,
-  SkipBack, SkipForward, Volume2, VolumeX, X, ExternalLink, ChevronRight, Search, Youtube, Maximize2,
+  SkipBack, SkipForward, Volume2, VolumeX, X, ExternalLink, ChevronRight, Search,
 } from "lucide-react";
-import { type MusicTrack, fetchMusicTracks, fetchYouTubeId } from "@/lib/api";
+import { type MusicTrack, fetchMusicTracks, fetchMusicStream } from "@/lib/api";
 
 function artworkUrl(url: string, size = 300) {
   return url.replace(/\d+x\d+bb/, `${size}x${size}bb`);
@@ -150,13 +150,12 @@ type PlayerState = {
 };
 
 function MusicCard({
-  track, isActive, isPlaying, onPlay, onFullSong,
+  track, isActive, isPlaying, onPlay,
 }: {
   track: MusicTrack;
   isActive: boolean;
   isPlaying: boolean;
   onPlay: () => void;
-  onFullSong: (t: MusicTrack) => void;
 }) {
   const art = artworkUrl(track.artworkUrl100, 300);
   return (
@@ -177,14 +176,6 @@ function MusicCard({
             )}
           </div>
         </div>
-        {/* Full song button — top-right corner on hover */}
-        <button
-          onClick={e => { e.stopPropagation(); onFullSong(track); }}
-          className="absolute top-1.5 right-1.5 w-7 h-7 rounded-lg bg-red-600/90 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-red-500 hover:scale-110 shadow-lg"
-          title="Play full song on YouTube"
-        >
-          <Youtube size={13} className="text-white" />
-        </button>
         {isActive && isPlaying && (
           <div className="absolute bottom-2 left-2">
             <PlayingBars />
@@ -209,7 +200,7 @@ function SkeletonCard() {
 
 function MiniPlayer({
   state, isPlaying, currentTime, duration, volume, muted,
-  onPlayPause, onSeek, onClose, onPrev, onNext, onVolume, onMute, onFullSong,
+  onPlayPause, onSeek, onClose, onPrev, onNext, onVolume, onMute,
 }: {
   state: PlayerState;
   isPlaying: boolean;
@@ -224,7 +215,6 @@ function MiniPlayer({
   onNext: () => void;
   onVolume: (v: number) => void;
   onMute: () => void;
-  onFullSong: (t: MusicTrack) => void;
 }) {
   const { track } = state;
   const art = artworkUrl(track.artworkUrl100, 80);
@@ -283,14 +273,6 @@ function MiniPlayer({
           />
         </div>
 
-        <button
-          onClick={() => onFullSong(state.track)}
-          className="p-1.5 text-red-500 hover:text-red-400 transition-colors flex-shrink-0"
-          title="Play full song on YouTube"
-        >
-          <Youtube size={15} />
-        </button>
-
         {track.trackViewUrl && (
           <a
             href={track.trackViewUrl}
@@ -312,15 +294,13 @@ function MiniPlayer({
 }
 
 function RegionSection({
-  region, autoLoad, playerState, isPlaying,
-  onPlay, onFullSong,
+  region, autoLoad, playerState, isPlaying, onPlay,
 }: {
   region: Region;
   autoLoad: boolean;
   playerState: PlayerState | null;
   isPlaying: boolean;
   onPlay: (track: MusicTrack, playlist: MusicTrack[], index: number) => void;
-  onFullSong: (t: MusicTrack) => void;
 }) {
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(false);
@@ -392,8 +372,7 @@ function RegionSection({
               track={t}
               isActive={playerState?.track.trackId === t.trackId}
               isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
-              onPlay={() => { onPlay(t, tracks, i); onFullSong(t); }}
-              onFullSong={onFullSong}
+              onPlay={() => onPlay(t, tracks, i)}
             />
           ))}
         </div>
@@ -405,8 +384,7 @@ function RegionSection({
               track={t}
               isActive={playerState?.track.trackId === t.trackId}
               isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
-              onPlay={() => { onPlay(t, tracks, i); onFullSong(t); }}
-              onFullSong={onFullSong}
+              onPlay={() => onPlay(t, tracks, i)}
             />
           ))}
         </div>
@@ -428,13 +406,7 @@ export default function Music() {
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [ytModal, setYtModal] = useState<{ track: MusicTrack; videoId: string | null; loading: boolean } | null>(null);
-
-  const handleFullSong = async (track: MusicTrack) => {
-    setYtModal({ track, videoId: null, loading: true });
-    const result = await fetchYouTubeId(track.trackName, track.artistName);
-    setYtModal(prev => prev ? { ...prev, videoId: result?.videoId ?? null, loading: false } : null);
-  };
+  const currentTrackIdRef = useRef<number | null>(null);
 
   const runMusicSearch = useCallback((q: string) => {
     if (!q.trim()) { setSearchResults([]); return; }
@@ -459,12 +431,24 @@ export default function Music() {
       audio.paused ? audio.play().catch(() => {}) : audio.pause();
       return;
     }
+    // Start with iTunes preview for instant audio feedback
+    currentTrackIdRef.current = track.trackId;
     audio.src = track.previewUrl ?? "";
     audio.volume = muted ? 0 : volume;
     audio.play().catch(() => {});
     setPlayerState({ track, playlist, index });
     setIsPlaying(true);
     setCurrentTime(0);
+
+    // Fetch full-length audio stream in background and swap seamlessly
+    fetchMusicStream(track.trackName, track.artistName).then(result => {
+      if (!result?.audioUrl) return;
+      if (currentTrackIdRef.current !== track.trackId) return; // user already changed song
+      audio.src = result.audioUrl;
+      audio.volume = muted ? 0 : volume;
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    }).catch(() => {});
   }, [playerState, volume, muted]);
 
   useEffect(() => {
@@ -570,7 +554,7 @@ export default function Music() {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold text-white">Music</h1>
-              <p className="text-gray-400 text-sm">Live previews · Africa · Europe · Asia · Americas · Worldwide</p>
+              <p className="text-gray-400 text-sm">Full songs · Africa · Europe · Asia · Americas · Worldwide</p>
             </div>
             {playerState && isPlaying && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
@@ -617,8 +601,7 @@ export default function Music() {
                       track={t}
                       isActive={playerState?.track.trackId === t.trackId}
                       isPlaying={playerState?.track.trackId === t.trackId && isPlaying}
-                      onPlay={() => { loadTrack(t, searchResults, i); handleFullSong(t); }}
-                      onFullSong={handleFullSong}
+                      onPlay={() => loadTrack(t, searchResults, i)}
                     />
                   ))}
                 </div>
@@ -660,7 +643,6 @@ export default function Music() {
                   playerState={playerState}
                   isPlaying={isPlaying}
                   onPlay={loadTrack}
-                  onFullSong={handleFullSong}
                 />
               ))}
             </div>
@@ -683,82 +665,7 @@ export default function Music() {
           onNext={handleNext}
           onVolume={handleVolume}
           onMute={handleMute}
-          onFullSong={handleFullSong}
         />
-      )}
-
-      {/* YouTube full-song modal */}
-      {ytModal && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          onClick={() => setYtModal(null)}
-        >
-          <div
-            className="glass rounded-2xl border border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
-              <img
-                src={artworkUrl(ytModal.track.artworkUrl100, 48)}
-                alt={ytModal.track.trackName}
-                className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-semibold truncate">{ytModal.track.trackName}</p>
-                <p className="text-gray-400 text-xs truncate">{ytModal.track.artistName}</p>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {ytModal.videoId && (
-                  <a
-                    href={`https://www.youtube.com/watch?v=${ytModal.videoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1.5 text-gray-400 hover:text-white transition-colors"
-                    title="Open in YouTube"
-                  >
-                    <Maximize2 size={14} />
-                  </a>
-                )}
-                <button onClick={() => setYtModal(null)} className="p-1.5 text-gray-400 hover:text-white transition-colors">
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Player area */}
-            <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-              {ytModal.loading ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/30">
-                  <div className="w-8 h-8 rounded-full border-2 border-red-500 border-t-transparent animate-spin" />
-                  <p className="text-gray-400 text-sm">Finding full song…</p>
-                </div>
-              ) : ytModal.videoId ? (
-                <iframe
-                  key={ytModal.videoId}
-                  className="absolute inset-0 w-full h-full"
-                  src={`https://www.youtube.com/embed/${ytModal.videoId}?autoplay=1&rel=0`}
-                  title={ytModal.track.trackName}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/30 px-6 text-center">
-                  <Youtube size={32} className="text-red-500/60" />
-                  <p className="text-gray-300 text-sm">Couldn't find this song on YouTube automatically.</p>
-                  <a
-                    href={`https://music.youtube.com/search?q=${encodeURIComponent(`${ytModal.track.trackName} ${ytModal.track.artistName}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded-lg transition-colors font-medium"
-                  >
-                    Search on YouTube Music
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       )}
     </>
   );
