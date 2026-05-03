@@ -202,10 +202,23 @@
 .video-container:-moz-full-screen,
 .video-container:-ms-fullscreen {
   width: 100vw !important;
-  height: 100vh !important;
+  height: 100dvh !important;
   aspect-ratio: unset !important;
   max-width: none !important;
   border-radius: 0 !important;
+}
+
+/* CSS fallback fullscreen for iOS / iframe-blocked environments */
+.video-container.css-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  aspect-ratio: unset !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+  max-width: none !important;
+  background: #000 !important;
 }
 .video-container:fullscreen video,
 .video-container:-webkit-full-screen video {

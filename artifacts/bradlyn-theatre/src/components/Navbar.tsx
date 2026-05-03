@@ -15,6 +15,7 @@ export function Navbar() {
   const [focused, setFocused] = useState(false);
   const [, navigate] = useLocation();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,9 +34,21 @@ export function Navbar() {
   }, [query]);
 
   const doSearch = (kw: string) => {
+    if (navDebounceRef.current) clearTimeout(navDebounceRef.current);
     setShowSuggestions(false);
     setQuery(kw);
     navigate(`/search?q=${encodeURIComponent(kw)}`);
+  };
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    setShowSuggestions(true);
+    if (navDebounceRef.current) clearTimeout(navDebounceRef.current);
+    if (val.trim().length >= 2) {
+      navDebounceRef.current = setTimeout(() => {
+        navigate(`/search?q=${encodeURIComponent(val.trim())}`);
+      }, 400);
+    }
   };
 
   return (
@@ -57,9 +70,9 @@ export function Navbar() {
               ref={inputRef}
               type="text"
               value={query}
-              onChange={e => { setQuery(e.target.value); setShowSuggestions(true); }}
+              onChange={e => handleQueryChange(e.target.value)}
               onFocus={() => { setFocused(true); setShowSuggestions(true); }}
-              onBlur={() => { setFocused(false); setTimeout(() => setShowSuggestions(false), 150); }}
+              onBlur={() => { setFocused(false); setTimeout(() => setShowSuggestions(false), 200); }}
               onKeyDown={e => { if (e.key === "Enter" && query.trim()) doSearch(query.trim()); }}
               placeholder="Search movies, series..."
               className="bg-transparent text-sm text-white placeholder-gray-500 outline-none flex-1 w-full"
@@ -80,7 +93,7 @@ export function Navbar() {
               {suggestions.slice(0, 8).map((s, i) => (
                 <button
                   key={s.word}
-                  onClick={() => doSearch(s.word)}
+                  onMouseDown={e => { e.preventDefault(); doSearch(s.word); }}
                   className={`w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-3 transition-colors ${
                     i !== 0 ? "border-t border-white/5" : ""
                   }`}

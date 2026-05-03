@@ -38,6 +38,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  const [cssFullscreen, setCssFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [resolution, setResolution] = useState<Resolution>(currentResolution ?? "720p");
@@ -95,23 +96,47 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     const el = containerRef.current;
     const vid = videoRef.current;
     if (!el || !vid) return;
+
+    type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void> };
+    type WebkitDoc = Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+    type WebkitVid = HTMLVideoElement & { webkitEnterFullscreen?: () => void; webkitSupportsFullscreen?: boolean };
+
+    const isNativeFs = !!(document.fullscreenElement || (document as WebkitDoc).webkitFullscreenElement);
+
+    // Exit path
+    if (isNativeFs) {
+      try {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else (document as WebkitDoc).webkitExitFullscreen?.();
+      } catch {}
+      try { screen.orientation.unlock?.(); } catch {}
+      return;
+    }
+    if (cssFullscreen) {
+      setCssFullscreen(false);
+      setFullscreen(false);
+      try { screen.orientation.unlock?.(); } catch {}
+      return;
+    }
+
+    // Enter path — try native fullscreen on container first
     try {
-      if (!document.fullscreenElement) {
-        if (el.requestFullscreen) await el.requestFullscreen();
-        else {
-          type WebkitVid = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
-          (vid as WebkitVid).webkitEnterFullscreen?.();
-        }
-        try {
-          type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void> };
-          await (screen.orientation as LockableOrientation).lock?.("landscape");
-        } catch {}
-      } else {
-        await document.exitFullscreen();
-        try { screen.orientation.unlock?.(); } catch {}
-      }
+      await el.requestFullscreen();
+      try { await (screen.orientation as LockableOrientation).lock?.("landscape"); } catch {}
+      return;
     } catch {}
-  }, []);
+
+    // Try webkit native video fullscreen (iOS Safari)
+    const wVid = vid as WebkitVid;
+    if (wVid.webkitSupportsFullscreen && wVid.webkitEnterFullscreen) {
+      try { wVid.webkitEnterFullscreen(); return; } catch {}
+    }
+
+    // CSS fallback — works in iframes / PWA / unsupported browsers
+    setCssFullscreen(true);
+    setFullscreen(true);
+    try { await (screen.orientation as LockableOrientation).lock?.("landscape"); } catch {}
+  }, [cssFullscreen]);
 
   useEffect(() => {
     autoHideControls();
@@ -385,7 +410,7 @@ export function VideoPlayer({ src, subjectId, subjectType, title, coverUrl, onEn
     <>
       <div
         ref={containerRef}
-        className={`video-container select-none ${fullscreen ? "video-fullscreen" : ""}`}
+        className={`video-container select-none${cssFullscreen ? " css-fullscreen" : ""}`}
         style={{ cursor: showControls ? "default" : "none" }}
         onMouseMove={autoHideControls}
         onTouchStart={autoHideControls}
