@@ -45,43 +45,28 @@ async function cachedFetch(url: string, path: string): Promise<{ data: unknown; 
   return fetchPromise;
 }
 
+// NOTE: "episodes" is intentionally NOT in this list — it is handled by our own route below
 const ALLOWED_PATHS = [
   "trending", "hot", "popular-search", "search", "search/suggest",
   "detail", "rich-detail", "homepage", "recommend", "browse", "ranking",
-  "staff/detail", "staff/works", "staff/related", "bff/stream", "episodes", "stream",
+  "staff/detail", "staff/works", "staff/related", "bff/stream", "stream",
 ];
 
 function isAllowed(path: string): boolean {
   return ALLOWED_PATHS.some(allowed => path === allowed || path.startsWith(allowed + "/") || path.startsWith(allowed + "?"));
 }
 
-router.get("/proxy/*splat", async (req, res): Promise<void> => {
-  const pathParam = req.params.splat;
-  const path = Array.isArray(pathParam) ? pathParam.join("/") : (pathParam ?? "");
+// ─────────────────────────────────────────────────────────────────────────────
+// SPECIFIC ROUTES — must come BEFORE the general /*splat catch-all
+// ─────────────────────────────────────────────────────────────────────────────
 
-  if (!isAllowed(path)) {
-    res.status(403).json({ error: "Forbidden path" });
-    return;
-  }
-
-  const query = new URLSearchParams(req.query as Record<string, string>).toString();
-  const url = `${BASE_URL}/${path}${query ? "?" + query : ""}`;
-
-  try {
-    const { data, status } = await cachedFetch(url, path);
-    res.status(status).json(data);
-  } catch (err) {
-    logger.error({ err, url }, "Proxy request failed");
-    res.status(502).json({ error: "Upstream API unavailable" });
-  }
-});
-
+/** Stream URL resolver */
 router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
   const subjectId = req.params.subjectId as string;
   const resolution = (req.query.resolution as string | undefined) ?? "720";
-  const lang = (req.query.lang as string | undefined) ?? "En";
-  const season = req.query.season as string | undefined;
-  const episode = req.query.ep as string | undefined;
+  const lang       = (req.query.lang as string | undefined) ?? "En";
+  const season     = req.query.season as string | undefined;
+  const episode    = req.query.ep as string | undefined;
 
   const url = season && episode
     ? `${BASE_URL}/bff/stream?subjectId=${encodeURIComponent(subjectId)}&se=${encodeURIComponent(season)}&ep=${encodeURIComponent(episode)}&resolution=${encodeURIComponent(resolution)}&lang=${encodeURIComponent(lang)}`
@@ -90,7 +75,7 @@ router.get("/proxy/stream/:subjectId", async (req, res): Promise<void> => {
   res.json({ url });
 });
 
-/** DELETE cached episode data so it re-fetches on next request */
+/** Delete cached episode data so it re-fetches on next request */
 router.delete("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
   const subjectId = req.params.subjectId as string;
   try {
@@ -105,62 +90,102 @@ router.delete("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
   }
 });
 
+/** AI-generated episode list with DB caching */
 router.get("/proxy/episodes/:subjectId", async (req, res): Promise<void> => {
   const subjectIdRaw = req.params.subjectId;
   const subjectId = Array.isArray(subjectIdRaw) ? subjectIdRaw[0] : subjectIdRaw;
+
   const { db } = await import("@workspace/db");
   const { episodeCacheTable } = await import("@workspace/db");
   const { eq } = await import("drizzle-orm");
 
-  // Return cached data if available
-  const cached = await db.select().from(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
-  if (cached.length > 0) {
-    const parsed = JSON.parse(cached[0].episodeData);
-    // Migrate old records that lack duration
-    const needsMigration = parsed?.seasons?.[0]?.episodes?.[0]?.duration === undefined;
-    if (!needsMigration) {
-      res.json(parsed);
-      return;
+  // Return cached data if available and complete (has duration)
+  try {
+    const cached = await db.select().from(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
+    if (cached.length > 0) {
+      const parsed = JSON.parse(cached[0].episodeData);
+      const needsMigration = parsed?.seasons?.[0]?.episodes?.[0]?.duration === undefined;
+      if (!needsMigration) {
+        res.json(parsed);
+        return;
+      }
+      // Stale record — delete so we re-fetch with duration
+      await db.delete(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
     }
-    // Delete stale cache so we re-fetch with duration
-    await db.delete(episodeCacheTable).where(eq(episodeCacheTable.subjectId, subjectId));
+  } catch (err) {
+    logger.warn({ err }, "Episode cache read failed, will re-fetch");
   }
 
   const seriesTitle = (req.query.title as string | undefined) ?? "Unknown Series";
 
-  // Ask AI for complete episode list including duration
-  const prompt = `Give me the complete episode list for the TV series "${seriesTitle}". ` +
+  // Ask AI for the real episode list
+  const prompt =
+    `Give me the complete episode list for the TV series "${seriesTitle}". ` +
     `Return ONLY valid JSON in this exact format with no extra text: ` +
     `{ "seasons": [ { "seasonNumber": 1, "episodes": [ { "episodeNumber": 1, "title": "Episode Title", "duration": "45m" } ] } ] }. ` +
     `Use real episode titles and real durations where known. Include all seasons and all episodes.`;
 
   try {
-    const aiUrl = `https://apis.xwolf.space/api/gpt4?q=${encodeURIComponent(prompt)}`;
-    const aiResp = await fetch(aiUrl, { signal: AbortSignal.timeout(12000) });
+    const aiUrl  = `https://apis.xwolf.space/api/gpt4?q=${encodeURIComponent(prompt)}`;
+    const aiResp = await fetch(aiUrl, { signal: AbortSignal.timeout(20000) });
     if (aiResp.ok) {
       const text = await aiResp.text();
       const jsonMatch = text.match(/\{[\s\S]*"seasons"[\s\S]*\}/);
       if (jsonMatch) {
-        const raw = JSON.parse(jsonMatch[0]);
-        // Normalise: support both {season/episode} and {seasonNumber/episodeNumber}
+        const raw        = JSON.parse(jsonMatch[0]);
         const normalized = normalizeEpisodeData(raw);
-        await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(normalized) });
-        res.json(normalized);
-        return;
+        // Only save if we got actual episodes
+        if (normalized.seasons.length > 0 && normalized.seasons[0].episodes.length > 0) {
+          await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(normalized) });
+          res.json(normalized);
+          return;
+        }
       }
     }
   } catch (err) {
     logger.warn({ err }, "AI episode fetch failed, falling back to generic data");
   }
 
-  // Fallback: numbered episodes with estimated durations
+  // Fallback: numbered placeholder episodes
   const fallback = buildFallback();
-  await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(fallback) });
+  try {
+    await db.insert(episodeCacheTable).values({ subjectId, episodeData: JSON.stringify(fallback) });
+  } catch { /* ignore duplicate insert race */ }
   res.json(fallback);
 });
 
-/** Normalise varying AI response shapes into our canonical format */
-function normalizeEpisodeData(raw: unknown): { seasons: Array<{ season: number; episodes: Array<{ episode: number; title: string; duration: string }> }> } {
+// ─────────────────────────────────────────────────────────────────────────────
+// GENERAL UPSTREAM PROXY — catch-all, must be LAST
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/proxy/*splat", async (req, res): Promise<void> => {
+  const pathParam = req.params.splat;
+  const path = Array.isArray(pathParam) ? pathParam.join("/") : (pathParam ?? "");
+
+  if (!isAllowed(path)) {
+    res.status(403).json({ error: "Forbidden path" });
+    return;
+  }
+
+  const query = new URLSearchParams(req.query as Record<string, string>).toString();
+  const url   = `${BASE_URL}/${path}${query ? "?" + query : ""}`;
+
+  try {
+    const { data, status } = await cachedFetch(url, path);
+    res.status(status).json(data);
+  } catch (err) {
+    logger.error({ err, url }, "Proxy request failed");
+    res.status(502).json({ error: "Upstream API unavailable" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function normalizeEpisodeData(raw: unknown): {
+  seasons: Array<{ season: number; episodes: Array<{ episode: number; title: string; duration: string }> }>;
+} {
   const r = raw as {
     seasons?: Array<{
       season?: number; seasonNumber?: number;
@@ -171,8 +196,8 @@ function normalizeEpisodeData(raw: unknown): { seasons: Array<{ season: number; 
   const seasons = (r.seasons ?? []).map(s => ({
     season: s.season ?? s.seasonNumber ?? 1,
     episodes: (s.episodes ?? []).map(e => ({
-      episode: e.episode ?? e.episodeNumber ?? 1,
-      title: e.title ?? `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
+      episode:  e.episode ?? e.episodeNumber ?? 1,
+      title:    e.title   ?? `Episode ${e.episode ?? e.episodeNumber ?? 1}`,
       duration: e.duration ?? "~45m",
     })),
   }));
@@ -185,8 +210,8 @@ function buildFallback() {
     seasons: Array.from({ length: 2 }, (_, s) => ({
       season: s + 1,
       episodes: Array.from({ length: 10 }, (_, e) => ({
-        episode: e + 1,
-        title: `Episode ${e + 1}`,
+        episode:  e + 1,
+        title:    `Episode ${e + 1}`,
         duration: "~45m",
       })),
     })),
