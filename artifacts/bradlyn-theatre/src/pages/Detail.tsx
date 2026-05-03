@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useRoute, Link } from "wouter";
-import { Play, Plus, Check, Share2, Twitter, Facebook, ExternalLink, Star, Clock, Calendar, Globe, Tv, ChevronDown, ChevronUp, List } from "lucide-react";
+import {
+  Play, Plus, Check, Share2, Twitter, Facebook, ExternalLink,
+  Star, Clock, Calendar, Globe, Tv, ChevronDown, ChevronUp, List, Loader2,
+} from "lucide-react";
 import { Carousel } from "@/components/Carousel";
 import { StarRating } from "@/components/StarRating";
 import { type Subject, type Staff, externalFetch, apiPost, apiDelete, apiGet } from "@/lib/api";
@@ -21,10 +24,10 @@ export default function Detail() {
   const [inList, setInList] = useState(false);
 
   // Series episode/season state
-  const [episodeData, setEpisodeData] = useState<EpisodeData | null>(null);
+  const [episodeData, setEpisodeData]     = useState<EpisodeData | null>(null);
   const [episodesLoading, setEpisodesLoading] = useState(false);
-  const [selectedSeason, setSelectedSeason] = useState(1);
-  const [showEpisodes, setShowEpisodes] = useState(false);
+  const [selectedSeason, setSelectedSeason]   = useState(1);
+  const [showEpisodes, setShowEpisodes]       = useState(false);
 
   const [showTrailer, setShowTrailer] = useState(false);
   const { user } = useAuth();
@@ -66,11 +69,9 @@ export default function Detail() {
     try {
       const res = await apiGet(`proxy/episodes/${subjectId}?title=${encodeURIComponent(subject?.title ?? "")}`);
       const raw: unknown = await res.json();
-      // Normalize: handle { seasons:[] }, { data:{ seasons:[] } }, and missing/undefined seasons
       const r = raw as { seasons?: Season[]; data?: { seasons?: Season[] } };
       const seasons = r.seasons ?? r.data?.seasons ?? [];
-      const data: EpisodeData = { seasons: Array.isArray(seasons) ? seasons : [] };
-      setEpisodeData(data);
+      setEpisodeData({ seasons: Array.isArray(seasons) ? seasons : [] });
       setShowEpisodes(true);
     } catch {
       toast("Could not load episode list", "warning");
@@ -110,7 +111,9 @@ export default function Detail() {
 
   const trailerUrl = richDetail?.trailerUrl ?? (subject?.trailer as { videoAddress?: { url?: string } } | null)?.videoAddress?.url;
   const isSeries = subject?.subjectType === 2;
-  const currentSeasonData = (episodeData?.seasons ?? []).find(s => s.season === selectedSeason);
+  const allSeasons = episodeData?.seasons ?? [];
+  const currentSeasonData = allSeasons.find(s => s.season === selectedSeason);
+  const currentEpisodes = currentSeasonData?.episodes ?? [];
 
   if (loading) {
     return (
@@ -132,6 +135,7 @@ export default function Detail() {
 
   return (
     <div className="pt-14 pb-12">
+      {/* Hero banner */}
       <div className="relative w-full h-72 overflow-hidden">
         {bgImg ? (
           <img src={bgImg} alt={subject.title} className="w-full h-full object-cover" />
@@ -145,6 +149,7 @@ export default function Detail() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 -mt-24 relative z-10">
+        {/* Title block */}
         <div className="flex gap-6 items-end mb-6">
           <div className="flex-shrink-0 w-32 rounded-lg overflow-hidden shadow-2xl border border-white/10">
             {subject.cover?.url ? (
@@ -171,6 +176,7 @@ export default function Detail() {
           </div>
         </div>
 
+        {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <Link href={`/watch/${subjectId}`}>
             <button className="flex items-center gap-2 bg-white text-black font-bold px-6 py-2.5 rounded-lg hover:bg-gray-100 transition-colors">
@@ -202,60 +208,91 @@ export default function Detail() {
 
         {/* ── Series: Seasons & Episodes ── */}
         {isSeries && (
-          <div className="mb-6">
+          <div className="mb-8">
+            {/* Toggle button */}
             <button
               onClick={loadEpisodes}
               disabled={episodesLoading}
               className="flex items-center gap-2 neon-btn px-5 py-2.5 rounded-lg font-medium text-sm mb-4 w-full sm:w-auto"
             >
-              <Tv size={15} />
-              {episodesLoading ? "Loading episodes…" : showEpisodes ? "Hide Episodes" : "Browse Episodes"}
-              {!episodesLoading && (showEpisodes ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+              {episodesLoading
+                ? <><Loader2 size={14} className="animate-spin" /> Loading episodes…</>
+                : <><Tv size={15} /> {showEpisodes ? "Hide Episodes" : "Browse Episodes"} {!episodesLoading && (showEpisodes ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</>
+              }
             </button>
 
             {showEpisodes && episodeData && (
               <div className="glass rounded-2xl border border-white/10 overflow-hidden">
                 {/* Season tabs */}
-                <div className="flex gap-1 p-3 border-b border-white/10 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                  {episodeData.seasons.map(s => (
-                    <button
-                      key={s.season}
-                      onClick={() => setSelectedSeason(s.season)}
-                      className={`flex-shrink-0 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                        selectedSeason === s.season
-                          ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
-                          : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
-                      }`}
-                    >
-                      Season {s.season}
-                    </button>
-                  ))}
+                <div className="border-b border-white/10 bg-white/[0.02]">
+                  <div className="flex gap-1 p-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+                    {allSeasons.map(s => (
+                      <button
+                        key={s.season}
+                        onClick={() => setSelectedSeason(s.season)}
+                        className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          selectedSeason === s.season
+                            ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                            : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
+                        }`}
+                      >
+                        <span>Season {s.season}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          selectedSeason === s.season ? "bg-cyan-500/20 text-cyan-300" : "bg-white/10 text-gray-500"
+                        }`}>
+                          {s.episodes.length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {/* Episode list */}
-                <div className="divide-y divide-white/5 max-h-80 overflow-y-auto">
-                  {currentSeasonData?.episodes.map(ep => (
+                {/* Episode list — full rows with title */}
+                <div className="divide-y divide-white/5 max-h-96 overflow-y-auto">
+                  {currentEpisodes.length === 0 ? (
+                    <div className="flex items-center justify-center h-24 text-gray-500 text-sm">No episodes available</div>
+                  ) : currentEpisodes.map(ep => (
                     <Link key={ep.episode} href={`/watch/${subjectId}?season=${selectedSeason}&episode=${ep.episode}`}>
-                      <button className="w-full flex items-center gap-4 px-4 py-3 hover:bg-white/5 transition-colors group text-left">
-                        <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 text-sm font-bold group-hover:border-cyan-500/30 group-hover:text-cyan-400 transition-colors flex-shrink-0">
+                      <button className="w-full flex items-center gap-4 px-4 py-3.5 hover:bg-white/5 transition-colors group text-left">
+                        {/* Episode number */}
+                        <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 text-sm font-bold group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10 group-hover:text-cyan-400 transition-all flex-shrink-0">
                           {ep.episode}
                         </div>
+                        {/* Episode info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-white text-sm font-medium truncate group-hover:text-cyan-400 transition-colors">
                             {ep.title || `Episode ${ep.episode}`}
                           </p>
-                          <p className="text-gray-500 text-xs">S{selectedSeason} · E{ep.episode}</p>
+                          <p className="text-gray-500 text-xs mt-0.5">
+                            Season {selectedSeason} · Episode {ep.episode}
+                          </p>
                         </div>
-                        <Play size={14} className="text-gray-600 group-hover:text-cyan-400 transition-colors flex-shrink-0" />
+                        {/* Play button */}
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-white/5 border border-white/10 group-hover:bg-cyan-500/20 group-hover:border-cyan-500/30 transition-all">
+                          <Play size={13} className="text-gray-500 group-hover:text-cyan-400 transition-colors ml-0.5" fill="currentColor" />
+                        </div>
                       </button>
                     </Link>
                   ))}
+                </div>
+
+                {/* Season summary footer */}
+                <div className="px-4 py-2.5 bg-white/[0.02] border-t border-white/10 flex items-center justify-between">
+                  <span className="text-gray-600 text-xs">
+                    Season {selectedSeason} · {currentEpisodes.length} episode{currentEpisodes.length !== 1 ? "s" : ""}
+                  </span>
+                  <Link href={`/watch/${subjectId}?season=${selectedSeason}&episode=1`}>
+                    <button className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 transition-colors font-medium">
+                      <Play size={11} fill="currentColor" /> Play Season {selectedSeason}
+                    </button>
+                  </Link>
                 </div>
               </div>
             )}
           </div>
         )}
 
+        {/* Available versions (dubs) */}
         {richDetail?.dubs && richDetail.dubs.length > 1 && (
           <div className="mb-6">
             <h3 className="text-white font-semibold mb-2">Available Versions</h3>
