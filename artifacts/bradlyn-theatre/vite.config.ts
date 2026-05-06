@@ -42,6 +42,25 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Performance optimizations
+    target: "esnext",
+    minify: "esbuild",
+    rollupOptions: {
+      output: {
+        // Code splitting for better caching
+        manualChunks: {
+          "vendor-react": ["react", "react-dom"],
+          "vendor-ui": ["lucide-react", "wouter"],
+        },
+      },
+    },
+    // Enable source maps only in development
+    sourcemap: process.env.NODE_ENV !== "production",
+  },
+  // Optimize dependency pre-bundling
+  optimizeDeps: {
+    include: ["react", "react-dom", "wouter", "lucide-react"],
+    exclude: [],
   },
   server: {
     port,

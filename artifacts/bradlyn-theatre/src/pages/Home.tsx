@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { HeroSection } from "@/components/HeroSection";
 import { Carousel } from "@/components/Carousel";
 import { Card } from "@/components/Card";
 import { type Subject, externalFetch, apiGet } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/context/ToastContext";
 
 export default function Home() {
   const [trending, setTrending] = useState<Subject[]>([]);
@@ -16,9 +15,9 @@ export default function Home() {
   const [loadingTrending, setLoadingTrending] = useState(true);
   const [loadingHot, setLoadingHot] = useState(true);
   const { user } = useAuth();
-  const { toast } = useToast();
   const [trendingPage, setTrendingPage] = useState(1);
   const [hasMoreTrending, setHasMoreTrending] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     externalFetch("trending", { page: 1, perPage: 20 })
@@ -75,8 +74,9 @@ export default function Home() {
       .catch(() => {});
   }, [user]);
 
-  const loadMoreTrending = () => {
-    if (!hasMoreTrending) return;
+  const loadMoreTrending = useCallback(() => {
+    if (!hasMoreTrending || loadingMore) return;
+    setLoadingMore(true);
     const nextPage = trendingPage + 1;
     externalFetch("trending", { page: nextPage, perPage: 20 })
       .then((d: unknown) => {
@@ -86,8 +86,9 @@ export default function Home() {
         setTrendingPage(nextPage);
         setHasMoreTrending(items.length === 20);
       })
-      .catch(() => {});
-  };
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  }, [hasMoreTrending, loadingMore, trendingPage]);
 
   return (
     <div className="pt-14">

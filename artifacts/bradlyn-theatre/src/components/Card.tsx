@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { Link, useLocation } from "wouter";
 import { Plus, Check, Play, Star } from "lucide-react";
 import { type Subject } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { apiPost, apiDelete, apiGet } from "@/lib/api";
-import { useEffect } from "react";
+import { apiPost, apiDelete } from "@/lib/api";
+import { useWatchlistStatus } from "@/hooks/useWatchlistStatus";
 
 type Props = {
   subject: Subject;
@@ -13,8 +13,7 @@ type Props = {
   onSendToRoom?: (subject: Subject) => void;
 };
 
-export function Card({ subject, rank, onSendToRoom }: Props) {
-  const [inList, setInList] = useState(false);
+function CardComponent({ subject, rank, onSendToRoom }: Props) {
   const [hover, setHover] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -23,15 +22,10 @@ export function Card({ subject, rank, onSendToRoom }: Props) {
   const typeLabel = subject.subjectType === 1 ? "Movie" : subject.subjectType === 2 ? "Series" : "Video";
   const genres = (subject.genre ?? "").split(",").slice(0, 2);
 
-  useEffect(() => {
-    if (!user) return;
-    apiGet(`user/watchlist/${subject.subjectId}`)
-      .then(r => r.json())
-      .then((d: { inWatchlist: boolean }) => setInList(d.inWatchlist))
-      .catch(() => {});
-  }, [user, subject.subjectId]);
+  // Use shared watchlist status hook with caching
+  const { inList, setInList } = useWatchlistStatus(subject.subjectId);
 
-  const toggleList = async (e: React.MouseEvent) => {
+  const toggleList = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!user) { toast("Please login to add to your list", "warning"); return; }
@@ -52,7 +46,7 @@ export function Card({ subject, rank, onSendToRoom }: Props) {
       setInList(true);
       toast("Added to My List!", "success");
     }
-  };
+  }, [user, inList, subject, coverUrl, toast, setInList]);
 
   return (
     <Link href={`/detail/${subject.subjectId}`}>
@@ -119,3 +113,10 @@ export function Card({ subject, rank, onSendToRoom }: Props) {
     </Link>
   );
 }
+
+// Memoize the Card component to prevent unnecessary re-renders
+export const Card = memo(CardComponent, (prev, next) => {
+  return prev.subject.subjectId === next.subject.subjectId && 
+         prev.rank === next.rank &&
+         prev.onSendToRoom === next.onSendToRoom;
+});
