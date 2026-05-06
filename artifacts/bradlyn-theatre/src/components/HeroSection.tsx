@@ -1,19 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { Link } from "wouter";
 import { Play, Info, Plus, Check, Star } from "lucide-react";
-import { type Subject, externalFetch, apiPost, apiDelete, apiGet } from "@/lib/api";
+import { type Subject, externalFetch, apiPost, apiDelete } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { useWatchlistStatus } from "@/hooks/useWatchlistStatus";
 
 type Props = { subjects: Subject[] };
 
-export function HeroSection({ subjects }: Props) {
+function HeroSectionComponent({ subjects }: Props) {
   const [current, setCurrent] = useState(0);
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null);
-  const [inList, setInList] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
   const subject = subjects[current];
+
+  // Use the shared watchlist status hook with caching
+  const { inList, setInList } = useWatchlistStatus(subject?.subjectId ?? "");
 
   useEffect(() => {
     if (subjects.length === 0) return;
@@ -24,23 +28,20 @@ export function HeroSection({ subjects }: Props) {
   useEffect(() => {
     if (!subject) return;
     setTrailerUrl(null);
-    externalFetch("rich-detail", { subjectId: subject.subjectId })
-      .then((d: unknown) => {
-        const data = d as { data: { trailerUrl: string } };
-        if (data.data?.trailerUrl) setTrailerUrl(data.data.trailerUrl);
-      })
-      .catch(() => {});
+    setImageLoaded(false);
+    // Delay fetching trailer to prioritize initial render
+    const timer = setTimeout(() => {
+      externalFetch("rich-detail", { subjectId: subject.subjectId })
+        .then((d: unknown) => {
+          const data = d as { data: { trailerUrl: string } };
+          if (data.data?.trailerUrl) setTrailerUrl(data.data.trailerUrl);
+        })
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
   }, [subject?.subjectId]);
 
-  useEffect(() => {
-    if (!user || !subject) return;
-    apiGet(`user/watchlist/${subject.subjectId}`)
-      .then(r => r.json())
-      .then((d: { inWatchlist: boolean }) => setInList(d.inWatchlist))
-      .catch(() => {});
-  }, [user, subject?.subjectId]);
-
-  const toggleList = async () => {
+  const toggleList = useCallback(async () => {
     if (!user) { toast("Please login to add to your list", "warning"); return; }
     if (!subject) return;
     if (inList) {
@@ -60,7 +61,7 @@ export function HeroSection({ subjects }: Props) {
       setInList(true);
       toast("Added to My List!", "success");
     }
-  };
+  }, [user, subject, inList, toast, setInList]);
 
   if (!subject) {
     return <div className="w-full h-[60vh] bg-gray-900 animate-pulse" />;
@@ -136,3 +137,9 @@ export function HeroSection({ subjects }: Props) {
     </div>
   );
 }
+
+// Memoize to prevent re-renders when subjects array reference changes but content is same
+export const HeroSection = memo(HeroSectionComponent, (prev, next) => {
+  if (prev.subjects.length !== next.subjects.length) return false;
+  return prev.subjects.every((s, i) => s.subjectId === next.subjects[i]?.subjectId);
+});

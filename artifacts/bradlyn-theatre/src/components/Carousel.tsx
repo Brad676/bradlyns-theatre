@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback, memo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card } from "./Card";
 import { type Subject } from "@/lib/api";
@@ -12,59 +12,89 @@ type Props = {
   onSendToRoom?: (subject: Subject) => void;
 };
 
-export function Carousel({ title, subjects, loading, onLoadMore, hasMore, onSendToRoom }: Props) {
+function CarouselComponent({ title, subjects, loading, onLoadMore, hasMore, onSendToRoom }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
-  const autoScrollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoScrollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [paused, setPaused] = useState(false);
+  const rafRef = useRef<number | null>(null);
 
-  const updateButtons = () => {
+  const updateButtons = useCallback(() => {
     const el = trackRef.current;
     if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 5);
-  };
+    // Use RAF to batch DOM reads and prevent layout thrashing
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      setCanScrollLeft(el.scrollLeft > 0);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 5);
+    });
+  }, []);
 
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
-    el.addEventListener("scroll", updateButtons);
+    // Use passive scroll listener for better performance
+    el.addEventListener("scroll", updateButtons, { passive: true });
     updateButtons();
-    return () => el.removeEventListener("scroll", updateButtons);
-  }, [subjects]);
+    return () => {
+      el.removeEventListener("scroll", updateButtons);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [subjects, updateButtons]);
 
+  // Auto-scroll with setTimeout (more efficient than setInterval for pausing)
   useEffect(() => {
-    if (paused) return;
-    autoScrollRef.current = setInterval(() => {
-      const el = trackRef.current;
-      if (!el) return;
-      if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 5) {
-        el.scrollLeft = 0;
-      } else {
-        el.scrollLeft += 200;
-      }
-    }, 3500);
-    return () => { if (autoScrollRef.current) clearInterval(autoScrollRef.current); };
-  }, [paused, subjects]);
+    if (paused || subjects.length === 0) return;
+    
+    const scheduleScroll = () => {
+      autoScrollRef.current = setTimeout(() => {
+        const el = trackRef.current;
+        if (!el) return;
+        requestAnimationFrame(() => {
+          if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 5) {
+            el.scrollLeft = 0;
+          } else {
+            el.scrollBy({ left: 200, behavior: "smooth" });
+          }
+        });
+        scheduleScroll();
+      }, 3500);
+    };
+    
+    scheduleScroll();
+    return () => { if (autoScrollRef.current) clearTimeout(autoScrollRef.current); };
+  }, [paused, subjects.length]);
 
+  // Infinite scroll load more with IntersectionObserver (more efficient than scroll events)
   useEffect(() => {
     const el = trackRef.current;
     if (!el || !onLoadMore || !hasMore) return;
-    const onScroll = () => {
-      if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 200) {
-        onLoadMore();
-      }
-    };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [onLoadMore, hasMore]);
+    
+    // Create a sentinel element at the end
+    let observer: IntersectionObserver | null = null;
+    const lastCard = el.lastElementChild;
+    
+    if (lastCard) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting) {
+            onLoadMore();
+          }
+        },
+        { root: el, rootMargin: "0px 200px 0px 0px", threshold: 0 }
+      );
+      observer.observe(lastCard);
+    }
+    
+    return () => observer?.disconnect();
+  }, [onLoadMore, hasMore, subjects.length]);
 
-  const scroll = (dir: "left" | "right") => {
+  const scroll = useCallback((dir: "left" | "right") => {
     const el = trackRef.current;
     if (!el) return;
     el.scrollBy({ left: dir === "left" ? -400 : 400, behavior: "smooth" });
-  };
+  }, []);
 
   if (!loading && subjects.length === 0) return null;
 
@@ -108,3 +138,13 @@ export function Carousel({ title, subjects, loading, onLoadMore, hasMore, onSend
     </section>
   );
 }
+
+// Memoize to prevent unnecessary re-renders when parent state changes
+export const Carousel = memo(CarouselComponent, (prev, next) => {
+  return prev.title === next.title &&
+         prev.subjects === next.subjects &&
+         prev.loading === next.loading &&
+         prev.hasMore === next.hasMore &&
+         prev.onLoadMore === next.onLoadMore &&
+         prev.onSendToRoom === next.onSendToRoom;
+});
