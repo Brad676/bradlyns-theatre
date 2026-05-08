@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+  "build:api": "your-build-command-for-api",
+  "build:frontend": "your-build-command-for-frontend",
+  ...
+  }
     "hello": "tsx ./src/hello.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
